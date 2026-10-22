@@ -168,6 +168,7 @@ h2{font-size:15px;font-weight:700;margin:20px 0 8px;color:var(--muted)}
   <video id="video" playsinline muted></video>
   <div class="frame"></div>
   <div class="ov-msg" id="camMsg">Насочи ја камерата кон QR-кодот на бинот</div>
+  <div id="camInfo" style="position:absolute;right:10px;bottom:calc(84px + env(safe-area-inset-bottom,0px));color:#aaa;font-size:11px"></div>
   <div class="ov-bar"><button id="camPhoto">Сликај</button><button id="camManual">Внеси рачно</button><button id="camClose">Затвори</button></div>
 </div>
 <input type="file" id="photoIn" accept="image/*" capture="environment" hidden>
@@ -496,21 +497,39 @@ function manualEntry(){
 /* ---------- scanning ---------- */
 let detector=null; try{if("BarcodeDetector" in window)detector=new BarcodeDetector({formats:["qr_code"]})}catch(e){}
 const cv=document.createElement("canvas"), cx=cv.getContext("2d",{willReadFrequently:true});
-async function decodeSource(src,w,h){
-  if(detector){try{const r=await detector.detect(src);if(r&&r[0])return r[0].rawValue}catch(e){}}
-  if(window.jsQR){const sc=Math.min(1,800/Math.max(w,h));cv.width=Math.round(w*sc);cv.height=Math.round(h*sc);
-    cx.drawImage(src,0,0,cv.width,cv.height);const d=cx.getImageData(0,0,cv.width,cv.height);
-    const r=jsQR(d.data,d.width,d.height,{inversionAttempts:"dontInvert"});if(r)return r.data}
-  return null;
+let flip=0;
+function jsqrRegion(src,sx,sy,sw,sh,maxPx,inv){
+  const sc=Math.min(1,maxPx/Math.max(sw,sh)); cv.width=Math.max(1,Math.round(sw*sc)); cv.height=Math.max(1,Math.round(sh*sc));
+  cx.drawImage(src,sx,sy,sw,sh,0,0,cv.width,cv.height);
+  const d=cx.getImageData(0,0,cv.width,cv.height);
+  const r=jsQR(d.data,d.width,d.height,{inversionAttempts:inv}); return r?r.data:null;
+}
+async function decodeSource(src,w,h,still){
+  const m=Math.min(w,h), cs=Math.round(m*0.7), cx0=Math.round((w-cs)/2), cy0=Math.round((h-cs)/2);
+  if(detector){
+    try{const r=await detector.detect(src);if(r&&r[0])return r[0].rawValue}catch(e){}
+  }
+  if(!window.jsQR) return null;
+  if(still){
+    return jsqrRegion(src,cx0,cy0,cs,cs,1000,"attemptBoth")||jsqrRegion(src,0,0,w,h,1400,"attemptBoth");
+  }
+  flip=(flip+1)%3;
+  if(flip<2) return jsqrRegion(src,cx0,cy0,cs,cs,720,"dontInvert");
+  return jsqrRegion(src,0,0,w,h,960,"dontInvert");
 }
 async function startScan(){
   const s=cur(); if(!s||s.closed) return;
   if(!S.liveOk){$("#photoIn").click();return}
-  $("#cam").classList.add("open"); $("#camMsg").textContent="Насочи ја камерата кон QR-кодот на бинот";
+  $("#cam").classList.add("open"); $("#camInfo").textContent=""; $("#camMsg").textContent="QR-кодот стави го во белата рамка, на 10–20 cm од камерата";
   try{
-    S.stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"}},audio:false});
-    const v=$("#video"); v.srcObject=S.stream; await v.play(); S.scanning=true; loop();
+    S.stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:"environment"},width:{ideal:1920},height:{ideal:1080}}});
+    const tr=S.stream.getVideoTracks()[0];
+    try{const caps=tr.getCapabilities?tr.getCapabilities():{}; if(caps.focusMode&&caps.focusMode.includes("continuous")) await tr.applyConstraints({advanced:[{focusMode:"continuous"}]});}catch(e){}
+    const v=$("#video"); v.srcObject=S.stream; await v.play(); S.scanning=true;
+    setTimeout(()=>{ if(S.scanning) $("#camInfo").textContent=`${v.videoWidth}×${v.videoHeight}, ${detector?"BD":"JS"}`; },800);
+    loop();
   }catch(e){
+    $("#camInfo").textContent=(e&&e.name)||"";
     S.liveOk=false; renderHeader();
     $("#camMsg").textContent="Камерата во живо не е дозволена. Провери дали си дозволил пристап до камера, или притисни „Сликај“.";
   }
@@ -519,14 +538,14 @@ async function loop(){
   if(!S.scanning) return; const v=$("#video");
   if(v.readyState>=2&&v.videoWidth){const r=await decodeSource(v,v.videoWidth,v.videoHeight);
     if(r&&S.scanning){if(navigator.vibrate)try{navigator.vibrate(80)}catch(e){} stopScan(); showItem(r); return}}
-  setTimeout(()=>requestAnimationFrame(loop),120);
+  setTimeout(()=>requestAnimationFrame(loop),60);
 }
 function stopScan(){S.scanning=false;if(S.stream){S.stream.getTracks().forEach(t=>t.stop());S.stream=null}$("#video").srcObject=null;$("#cam").classList.remove("open")}
 $("#scanBtn").onclick=startScan; $("#manualBtn").onclick=manualEntry;
 $("#camClose").onclick=stopScan; $("#camManual").onclick=manualEntry; $("#camPhoto").onclick=()=>$("#photoIn").click();
 $("#photoIn").onchange=e=>{const f=e.target.files[0];e.target.value="";if(!f)return;
   const img=new Image(),url=URL.createObjectURL(f);
-  img.onload=async()=>{const r=await decodeSource(img,img.naturalWidth,img.naturalHeight);URL.revokeObjectURL(url);
+  img.onload=async()=>{const r=await decodeSource(img,img.naturalWidth,img.naturalHeight,true);URL.revokeObjectURL(url);
     if(r){stopScan();showItem(r)}else toast("QR-кодот не се гледа на сликата. Сликај одблиску.")};
   img.src=url;};
 
