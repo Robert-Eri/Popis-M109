@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="mk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1F45B8">
+<title>Попис М-109</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+/* ============================================================
+   ПОДЕСУВАЊА — ОВА Е ЕДИНСТВЕНИОТ ДЕЛ ШТО ГО МЕНУВАШ
+   ============================================================ */
+
+// 1) Залепи го тука блокот што ќе го копираш од Firebase (firebaseConfig):
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyDH2zKS74zUBkxy9Hm_5cc60Umn6DIaB7Y",
+  authDomain: "inventory-control-eri.firebaseapp.com",
+  projectId: "inventory-control-eri",
+  storageBucket: "inventory-control-eri.firebasestorage.app",
+  messagingSenderId: "117394222949",
+  appId: "1:117394222949:web:4dc2966aca15a893dbbb8c"
+};
+
+// 2) Мејлови (корисници од Firebase) што смеат да внесуваат листа на артикли и да затвораат попис:
+const ADMIN_EMAILS = ["robert@popis.eri"];
+
+/* ============================================================ */
+</script>
+<style>
+:root{
+  --bg:#E9EDEC; --surface:#FFFFFF; --ink:#16232B; --muted:#5B6B73; --line:#CBD3D2;
+  --accent:#1F45B8; --accent-ink:#FFFFFF; --ok:#2B7A4B; --warn:#A65F00; --warn-soft:#F6E7CF; --danger:#B3261E;
+  color-scheme:light; box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root{--bg:#0F1619;--surface:#18232A;--ink:#E6ECEC;--muted:#93A3A9;--line:#2C3A41;
+    --accent:#7C9BFF;--accent-ink:#0B1530;--ok:#6FCF97;--warn:#F2B35B;--warn-soft:#3A2B14;--danger:#FF8A80;color-scheme:dark}
+}
+*,*::before,*::after{box-sizing:inherit}
+html{height:100%}
+body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);
+  font-family:"Golos Text",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:16px;line-height:1.45;
+  font-variant-numeric:tabular-nums;padding-bottom:96px}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--surface)}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+header{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--surface);border-bottom:1px solid var(--line)}
+.wrap{max-width:720px;margin:0 auto;padding:0 16px}
+.top{display:flex;align-items:center;gap:12px;padding:12px 0 8px}
+.top h1{font-size:20px;font-weight:800;margin:0;white-space:nowrap}
+.top select{flex:1;min-width:0;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:15px}
+.progress{display:flex;align-items:baseline;gap:8px;padding:0 0 10px;font-size:14px;color:var(--muted)}
+.progress b{font-size:22px;color:var(--ink);font-weight:800}
+.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin-bottom:10px}
+.bar i{display:block;height:100%;background:var(--ok);width:0;transition:width .3s}
+nav{display:flex;gap:4px}
+nav button{flex:1;background:none;border:0;border-bottom:3px solid transparent;padding:10px 4px;font-weight:600;color:var(--muted)}
+nav button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+main{padding:16px 0}
+.notice{background:var(--warn-soft);border-left:4px solid var(--warn);padding:10px 12px;border-radius:6px;margin-bottom:14px;font-size:14px}
+.empty{padding:32px 8px;text-align:center;color:var(--muted)}
+.empty b{display:block;color:var(--ink);font-size:18px;margin-bottom:6px}
+h2{font-size:15px;font-weight:700;margin:20px 0 8px;color:var(--muted)}
+.list{background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.row{display:flex;align-items:center;gap:12px;padding:11px 14px;border-top:1px solid var(--line)}
+.row:first-child{border-top:0}
+.row .main{flex:1;min-width:0}
+.code{font-weight:700;font-size:16px;word-break:break-all}
+.desc{font-size:14px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qty{font-weight:800;font-size:20px;text-align:right;min-width:3ch}
+.meta{font-size:12px;color:var(--muted);text-align:right}
+.meta.pend{color:var(--warn);font-weight:600}
+.loc{display:inline-block;font-size:12px;font-weight:600;background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:0 6px;margin-left:6px;vertical-align:1px}
+.del{background:none;border:0;color:var(--danger);font-size:14px;padding:6px}
+.row.done .qty{color:var(--ok)} .row.todo .qty{color:var(--warn)}
+.tools{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.tools input{flex:1 1 180px;min-width:0;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.chips{display:flex;gap:6px}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:7px 12px;font-size:14px;font-weight:600}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.btn{border:0;border-radius:10px;padding:12px 16px;font-weight:700;background:var(--accent);color:var(--accent-ink)}
+.btn.ghost{background:var(--surface);color:var(--ink);border:1px solid var(--line)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px}
+.card p{margin:0 0 12px;font-size:15px}
+.card .btns{display:flex;gap:8px;flex-wrap:wrap}
+.field{display:block;margin-bottom:12px}
+.field span{display:block;font-size:14px;color:var(--muted);margin-bottom:4px}
+.field input,.field select{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.scanbar{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);
+  padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px))}
+.scanbar .wrap{display:flex;gap:8px;padding:0}
+.scanbar .btn{flex:1;font-size:18px;padding:16px}
+.scanbar .btn.ghost{flex:0 0 auto;font-size:15px}
+.overlay{position:fixed;inset:0;z-index:20;background:#000;display:none;flex-direction:column}
+.overlay.open{display:flex}
+.overlay video{flex:1;width:100%;object-fit:cover;min-height:0}
+.frame{position:absolute;left:50%;top:42%;width:min(64vw,280px);aspect-ratio:1;transform:translate(-50%,-50%);
+  border:3px solid #fff;border-radius:14px;box-shadow:0 0 0 100vmax rgba(0,0,0,.45)}
+.ov-msg{position:absolute;left:16px;right:16px;top:calc(16px + env(safe-area-inset-top,0px));color:#fff;text-align:center;font-weight:600;text-shadow:0 1px 3px #000}
+.ov-bar{display:flex;gap:8px;padding:12px 16px calc(16px + env(safe-area-inset-bottom,0px));background:#000}
+.ov-bar button{flex:1;border:1px solid #555;background:#1b1b1b;color:#fff;border-radius:10px;padding:14px 8px;font-weight:600}
+.sheet-bg{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.5);display:none;align-items:flex-end;justify-content:center}
+.sheet-bg.open{display:flex}
+.sheet{background:var(--surface);width:100%;max-width:560px;border-radius:16px 16px 0 0;padding:18px 18px calc(18px + env(safe-area-inset-bottom,0px));max-height:92vh;overflow:auto}
+.scode{font-size:28px;font-weight:800;word-break:break-all;margin:0}
+.sdesc{color:var(--muted);margin:2px 0 10px}
+.already{background:var(--bg);border-radius:8px;padding:10px 12px;font-size:15px;margin-bottom:14px}
+.unknown{background:var(--warn-soft);border-left:4px solid var(--warn);border-radius:6px;padding:10px 12px;font-size:14px;margin-bottom:12px}
+.bigqty{width:100%;font-size:56px;font-weight:800;text-align:center;border:2px solid var(--line);border-radius:12px;padding:6px;background:var(--bg);margin-bottom:6px}
+.bigqty:focus{border-color:var(--accent);outline:none}
+.hint{font-size:13px;color:var(--muted);text-align:center;margin-bottom:14px}
+.sheet .btns{display:flex;gap:8px}
+.sheet .btns .btn{flex:1;font-size:17px;padding:15px}
+.manual{width:100%;font-size:22px;font-weight:700;border:2px solid var(--line);border-radius:12px;padding:12px;background:var(--bg);margin:8px 0 14px}
+.toast{position:fixed;left:50%;bottom:calc(100px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:40;
+  background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:999px;font-weight:600;font-size:15px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw;text-align:center}
+.toast.show{opacity:1}
+#login{position:fixed;inset:0;z-index:50;background:var(--bg);display:none;align-items:center;justify-content:center;padding:24px}
+#login.open{display:flex}
+#login .card{width:100%;max-width:380px}
+#login h1{font-size:26px;margin:0 0 4px}
+#login .err{color:var(--danger);font-size:14px;min-height:20px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div id="login"><div class="card">
+  <h1>Попис М-109</h1>
+  <p style="color:var(--muted)">Внеси го твоето име. Ќе се гледа кај она што ќе го избројиш.</p>
+  <label class="field"><span>Име и презиме</span><input id="lgName" autocomplete="name"></label>
+  <div class="err" id="lgErr"></div>
+  <button class="btn" id="lgBtn" style="width:100%;font-size:17px;padding:14px">Почни</button>
+</div></div>
+
+<header>
+  <div class="wrap">
+    <div class="top"><h1>Попис М-109</h1><select id="sessionSel" aria-label="Попис"></select></div>
+    <div class="progress"><b id="pDone">0</b><span id="pText">од 0 артикли изброени</span></div>
+    <div class="bar"><i id="pBar"></i></div>
+    <nav role="tablist">
+      <button role="tab" data-tab="count" aria-selected="true">Броење</button>
+      <button role="tab" data-tab="overview" aria-selected="false">Преглед</button>
+      <button role="tab" data-tab="setup" aria-selected="false">Подесување</button>
+    </nav>
+  </div>
+</header>
+<main class="wrap">
+  <div id="banner"></div>
+  <section id="tab-count"></section>
+  <section id="tab-overview" hidden></section>
+  <section id="tab-setup" hidden></section>
+</main>
+<div class="scanbar"><div class="wrap">
+  <button class="btn" id="scanBtn">Скенирај QR</button>
+  <button class="btn ghost" id="manualBtn">Внеси шифра</button>
+</div></div>
+<div class="overlay" id="cam">
+  <video id="video" playsinline muted></video>
+  <div class="frame"></div>
+  <div class="ov-msg" id="camMsg">Насочи ја камерата кон QR-кодот на бинот</div>
+  <div class="ov-bar"><button id="camPhoto">Сликај</button><button id="camManual">Внеси рачно</button><button id="camClose">Затвори</button></div>
+</div>
+<input type="file" id="photoIn" accept="image/*" capture="environment" hidden>
+<div class="sheet-bg" id="sheetBg"><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(() => {
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt = n => (Math.round(n*1000)/1000).toLocaleString("mk-MK");
+const store = {get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+let tt; function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(tt);tt=setTimeout(()=>t.classList.remove("show"),2400)}
+
+const S = { fs:null, auth:null, uid:null, email:"", name:store.get("popis-name")||"", admin:false, online:navigator.onLine,
+  items:[], itemMap:new Map(), sessions:[], sid:null, lines:[], unsub:[], unsubLines:null,
+  tab:"count", filter:"all", q:"", stream:null, scanning:false, liveOk:true, pendingImport:null, ready:false, configErr:false };
+
+/* ---------- Firebase ---------- */
+if(!window.firebase || FIREBASE_CONFIG.apiKey==="ВНЕСИ_ТУКА"){ S.configErr=true; }
+else{
+  firebase.initializeApp(FIREBASE_CONFIG);
+  S.auth=firebase.auth(); S.fs=firebase.firestore();
+  S.fs.enablePersistence({synchronizeTabs:true}).catch(()=>{});
+  S.auth.onAuthStateChanged(u=>{
+    if(!u){ stopData(); S.uid=null; S.auth.signInAnonymously().catch(()=>{S.authErr=true;render()}); return; }
+    S.uid=u.uid; S.anon=u.isAnonymous; S.email=(u.email||"").toLowerCase();
+    S.admin=!S.anon && ADMIN_EMAILS.map(x=>x.toLowerCase()).includes(S.email);
+    if(!S.name){$("#lgName").value="";$("#login").classList.add("open");setTimeout(()=>$("#lgName").focus(),100)}
+    startData();
+  });
+}
+window.addEventListener("online",()=>{S.online=true;render()});
+window.addEventListener("offline",()=>{S.online=false;render()});
+
+$("#lgBtn").onclick=()=>{
+  const n=$("#lgName").value.trim();
+  if(!n){$("#lgErr").textContent="Внеси го твоето име.";return}
+  S.name=n; store.set("popis-name",n); $("#lgErr").textContent=""; $("#login").classList.remove("open"); render();
+};
+$("#lgName").onkeydown=e=>{if(e.key==="Enter")$("#lgBtn").click()};
+
+function stopData(){S.unsub.forEach(f=>f());S.unsub=[];if(S.unsubLines){S.unsubLines();S.unsubLines=null}}
+function startData(){
+  stopData();
+  S.unsub.push(S.fs.doc("config/items").onSnapshot(snap=>{
+    const d=snap.exists?snap.data():null;
+    S.items=(d&&Array.isArray(d.list))?d.list:[];
+    S.itemMap=new Map(S.items.map(i=>[norm(i.c),i])); S.ready=true; render();
+  },err=>{S.ready=true;toast("Нема пристап до базата. Провери ги правилата во Firebase.");render()}));
+  S.unsub.push(S.fs.collection("sessions").onSnapshot(snap=>{
+    S.sessions=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+    const saved=store.get("popis-sid"), prev=S.sid;
+    if(!S.sessions.find(s=>s.id===S.sid)) S.sid=(S.sessions.find(s=>s.id===saved)||S.sessions.find(s=>!s.closed)||S.sessions[0]||{}).id||null;
+    if(S.sid!==prev) watchLines(); else render();
+  },()=>{}));
+}
+function watchLines(){
+  if(S.unsubLines){S.unsubLines();S.unsubLines=null}
+  S.lines=[]; if(!S.sid){render();return}
+  S.unsubLines=S.fs.collection("sessions/"+S.sid+"/lines").onSnapshot({includeMetadataChanges:true},snap=>{
+    S.lines=snap.docs.map(d=>({id:d.id,pending:d.metadata.hasPendingWrites,...d.data()})); render();
+  },()=>{});
+}
+
+/* ---------- helpers ---------- */
+document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{
+  S.tab=b.dataset.tab;
+  document.querySelectorAll("nav button").forEach(x=>x.setAttribute("aria-selected",x===b));
+  ["count","overview","setup"].forEach(t=>$("#tab-"+t).hidden=t!==S.tab); render();
+});
+function norm(c){return String(c??"").trim().toUpperCase()}
+function totals(){const m=new Map();for(const l of S.lines){const k=norm(l.code);const o=m.get(k)||{qty:0,n:0};o.qty+=Number(l.qty)||0;o.n++;m.set(k,o)}return m}
+const cur=()=>S.sessions.find(s=>s.id===S.sid);
+const timeStr=t=>{try{return new Date(t).toLocaleString("mk-MK",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}catch(e){return ""}};
+function matchCode(raw){
+  const txt=String(raw||"").trim(); if(!txt) return null;
+  if(S.itemMap.has(norm(txt))) return S.itemMap.get(norm(txt)).c;
+  for(const p of txt.split(/[\s|;,\t\n\r]+/).filter(Boolean)) if(S.itemMap.has(norm(p))) return S.itemMap.get(norm(p)).c;
+  return txt;
+}
+
+/* ---------- render ---------- */
+function renderHeader(){
+  const sel=$("#sessionSel");
+  if(!S.sessions.length){sel.innerHTML='<option>Нема отворен попис</option>';sel.disabled=true}
+  else{sel.disabled=false;sel.innerHTML=S.sessions.map(s=>`<option value="${esc(s.id)}"${s.id===S.sid?" selected":""}>${esc(s.name)}${s.closed?" (затворен)":""}</option>`).join("")}
+  const t=totals(), total=S.items.length, done=S.items.filter(i=>t.has(norm(i.c))).length;
+  $("#pDone").textContent=done;
+  $("#pText").textContent=total?`од ${total} артикли изброени`:"артикли изброени (нема внесена листа)";
+  $("#pBar").style.width=total?(done/total*100)+"%":"0";
+  const s=cur(), off=!S.uid||!s||s.closed;
+  $("#scanBtn").disabled=off; $("#manualBtn").disabled=off;
+  $("#scanBtn").textContent=S.liveOk?"Скенирај QR":"Сликај QR";
+}
+function renderBanner(){
+  let h="";
+  if(S.configErr) h='<div class="notice">Апликацијата не е поврзана со Firebase. Во фајлот index.html пополни го делот FIREBASE_CONFIG.</div>';
+  else if(S.authErr) h='<div class="notice">Не може да се поврзе со базата. Во Firebase, во Authentication, вклучи го „Anonymous“.</div>';
+  else if(!S.online) h='<div class="notice">Нема интернет. Можеш да продолжиш да броиш, изброеното ќе се испрати кога ќе се врати врската. Не ја затворај апликацијата.</div>';
+  $("#banner").innerHTML=h;
+}
+function renderCount(){
+  const el=$("#tab-count"), s=cur();
+  if(!S.uid||!S.ready){el.innerHTML="";return}
+  if(!S.items.length&&!S.sessions.length){el.innerHTML=`<div class="empty"><b>Почни од „Подесување“</b>Прво внеси ја листата на артикли од Excel, па отвори нов попис.</div>`;return}
+  if(!s){el.innerHTML=`<div class="empty"><b>Нема отворен попис</b>${S.admin?"Отвори нов попис во „Подесување“.":"Почекај раководителот да отвори попис."}</div>`;return}
+  const list=S.lines.slice().sort((a,b)=>(b.at||0)-(a.at||0)).slice(0,40);
+  if(!list.length){el.innerHTML=`<div class="empty"><b>Сè уште ништо не е изброено</b>Притисни „${S.liveOk?"Скенирај QR":"Сликај QR"}“ и скенирај го кодот на првиот бин.</div>`;return}
+  el.innerHTML=`<h2>Последни внеси</h2><div class="list">${list.map(l=>{
+    const it=S.itemMap.get(norm(l.code)); const canDel=!s.closed&&(l.by===S.uid||S.admin);
+    return `<div class="row"><div class="main"><div class="code">${esc(l.code)}${it&&it.l?`<span class="loc">${esc(it.l)}</span>`:""}</div>
+      <div class="desc">${esc(it?it.d:"Непознат артикл")}</div></div>
+      <div><div class="qty">${fmt(l.qty)}</div>${l.pending?`<div class="meta pend">чека интернет</div>`:`<div class="meta">${esc(l.by===S.uid?"ти":(l.byName||"колега"))}, ${esc(timeStr(l.at))}</div>`}</div>
+      ${canDel?`<button class="del" data-del="${esc(l.id)}">Бриши</button>`:""}</div>`}).join("")}</div>`;
+  el.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>delLine(b.dataset.del));
+}
+function renderOverview(){
+  const el=$("#tab-overview"), t=totals(), known=new Set(S.items.map(i=>norm(i.c)));
+  let rows=S.items.map(i=>({c:i.c,d:i.d,l:i.l,tot:t.get(norm(i.c))}));
+  for(const [k,v] of t) if(!known.has(k)){const l=S.lines.find(x=>norm(x.code)===k);rows.push({c:l?l.code:k,d:"Непознат артикл (не е во листата)",l:"",tot:v})}
+  const q=S.q.trim().toLowerCase();
+  if(q) rows=rows.filter(r=>(r.c+" "+r.d+" "+r.l).toLowerCase().includes(q));
+  if(S.filter==="todo") rows=rows.filter(r=>!r.tot);
+  if(S.filter==="done") rows=rows.filter(r=>r.tot);
+  rows.sort((a,b)=>String(a.l||"~").localeCompare(String(b.l||"~"),"mk",{numeric:true})||String(a.c).localeCompare(String(b.c),"mk",{numeric:true}));
+  el.innerHTML=`<div class="tools"><input id="q" type="search" placeholder="Барај шифра, опис или адреса" value="${esc(S.q)}">
+    <div class="chips"><button class="chip" data-f="all" aria-pressed="${S.filter==="all"}">Сите</button>
+    <button class="chip" data-f="todo" aria-pressed="${S.filter==="todo"}">Неизброени</button>
+    <button class="chip" data-f="done" aria-pressed="${S.filter==="done"}">Изброени</button></div></div>
+    ${cur()?`<div class="tools"><button class="btn ghost" id="exportBtn">Симни Excel од овој попис</button></div>`:""}
+    ${rows.length?`<div class="list">${rows.map(r=>`<div class="row ${r.tot?"done":"todo"}"><div class="main">
+      <div class="code">${esc(r.c)}${r.l?`<span class="loc">${esc(r.l)}</span>`:""}</div><div class="desc">${esc(r.d)}</div></div>
+      <div><div class="qty">${r.tot?fmt(r.tot.qty):"–"}</div>${r.tot&&r.tot.n>1?`<div class="meta">${r.tot.n} внеси</div>`:""}</div></div>`).join("")}</div>`
+    :`<div class="empty">${S.items.length?"Нема артикли за овој филтер.":"Листата на артикли е празна."}</div>`}`;
+  const qi=$("#q"); qi.oninput=()=>{S.q=qi.value;const p=qi.selectionStart;renderOverview();const n=$("#q");n.focus();try{n.setSelectionRange(p,p)}catch(e){}};
+  el.querySelectorAll("[data-f]").forEach(b=>b.onclick=()=>{S.filter=b.dataset.f;renderOverview()});
+  const eb=$("#exportBtn"); if(eb) eb.onclick=exportXlsx;
+}
+function renderSetup(){
+  const el=$("#tab-setup"), s=cur(), today=new Date().toLocaleDateString("mk-MK");
+  let h=S.anon
+    ? `<h2>Корисник</h2><div class="card"><p>Броиш како <b>${esc(S.name||"без име")}</b>.</p><div class="btns"><button class="btn ghost" id="chName">Смени име</button></div></div>
+      <h2>Најава за раководител</h2><div class="card"><p>Потребна е само за внес на листа на артикли и за отворање/затворање попис.</p>
+      <label class="field"><span>Корисник (мејл)</span><input id="admEmail" type="email" autocomplete="username"></label>
+      <label class="field"><span>Лозинка</span><input id="admPass" type="password" autocomplete="current-password"></label>
+      <div class="btns"><button class="btn" id="admLogin">Најави се</button></div></div>`
+    : `<h2>Корисник</h2><div class="card"><p>Најавен како <b>${esc(S.name)}</b> (${esc(S.email)})${S.admin?", раководител":""}.</p>
+      <div class="btns"><button class="btn ghost" id="chName">Смени име</button><button class="btn ghost" id="logout">Одјави се</button></div></div>`;
+  if(S.admin){
+    let imp="";
+    if(S.pendingImport){
+      const p=S.pendingImport, opts=sel=>p.headers.map((x,i)=>`<option value="${i}"${i===sel?" selected":""}>${esc(x||("Колона "+(i+1)))}</option>`).join("");
+      imp=`<div class="card"><p><b>${p.rows.length}</b> реда во „${esc(p.file)}“. Провери кои колони се што:</p>
+        <label class="field"><span>Шифра на артикл</span><select id="mc">${opts(p.c)}</select></label>
+        <label class="field"><span>Опис</span><select id="md"><option value="-1">(нема)</option>${opts(p.d)}</select></label>
+        <label class="field"><span>Адреса (локација)</span><select id="ml"><option value="-1">(нема)</option>${opts(p.l)}</select></label>
+        <div class="btns"><button class="btn" id="saveImp">Зачувај ја листата</button><button class="btn ghost" id="cancelImp">Откажи</button></div></div>`;
+    }
+    h+=`<h2>Листа на артикли</h2><div class="card"><p>${S.items.length?`Во листата има <b>${S.items.length}</b> артикли. Нова листа ја заменува старата; изброеното останува.`:"Внеси Excel или CSV со шифра, опис и адреса на артиклите."}</p>
+      <div class="btns"><button class="btn${S.items.length?" ghost":""}" id="pickFile">Избери Excel фајл</button></div>
+      <input type="file" id="fileIn" accept=".xlsx,.xls,.csv" hidden></div>${imp}
+      <h2>Попис</h2><div class="card"><label class="field"><span>Име на нов попис</span><input id="newName" value="Попис М-109, ${esc(today)}"></label>
+      <div class="btns"><button class="btn" id="newSess">Отвори нов попис</button>
+      ${s&&!s.closed?`<button class="btn ghost" id="closeSess">Затвори го „${esc(s.name)}“</button>`:""}</div></div>`;
+  }
+  el.innerHTML=h;
+  const lo=$("#logout"); if(lo) lo.onclick=()=>S.auth.signOut();
+  const al=$("#admLogin"); if(al) al.onclick=async()=>{
+    const em=$("#admEmail").value.trim(), pw=$("#admPass").value; if(!em||!pw){toast("Внеси мејл и лозинка");return}
+    al.disabled=true;
+    try{await S.auth.signInWithEmailAndPassword(em,pw);toast("Најавен си како раководител")}
+    catch(err){toast(/wrong|invalid|not-found|credential/.test((err&&err.code)||"")?"Погрешен мејл или лозинка":"Не може да се најави")}
+    al.disabled=false;
+  };
+  $("#chName").onclick=()=>{const n=prompt("Твоето име:",S.name);if(n&&n.trim()){S.name=n.trim();store.set("popis-name",S.name);renderSetup()}};
+  if(S.admin){
+    $("#pickFile").onclick=()=>$("#fileIn").click();
+    $("#fileIn").onchange=e=>{const f=e.target.files[0];if(f)readFile(f);e.target.value=""};
+    if(S.pendingImport){$("#saveImp").onclick=saveImport;$("#cancelImp").onclick=()=>{S.pendingImport=null;renderSetup()}}
+    $("#newSess").onclick=newSession; const cs=$("#closeSess"); if(cs) cs.onclick=closeSession;
+  }
+}
+function render(){renderHeader();renderBanner();
+  if(S.tab==="count")renderCount(); if(S.tab==="overview")renderOverview(); if(S.tab==="setup"&&S.uid)renderSetup();}
+
+/* ---------- import ---------- */
+const guess=(hs,re)=>hs.findIndex(x=>re.test(String(x||"").toLowerCase()));
+async function readFile(f){
+  try{
+    const wb=XLSX.read(await f.arrayBuffer(),{type:"array"}), ws=wb.Sheets[wb.SheetNames[0]];
+    const aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:"",raw:false}).filter(r=>r.some(c=>String(c).trim()!==""));
+    if(aoa.length<2){toast("Фајлот е празен");return}
+    const hs=aoa[0].map(String);
+    let c=guess(hs,/шифр|код|code|артикл|item|^no|број/); if(c<0)c=0;
+    let d=guess(hs,/опис|назив|desc|name|име/), l=guess(hs,/адрес|локац|location|bin|позиц|место/);
+    if(d===c)d=-1; if(l===c||l===d)l=-1;
+    S.pendingImport={file:f.name,headers:hs,rows:aoa.slice(1),c,d,l}; renderSetup();
+  }catch(e){toast("Фајлот не може да се прочита")}
+}
+async function saveImport(){
+  const p=S.pendingImport, c=+$("#mc").value, d=+$("#md").value, l=+$("#ml").value, seen=new Set(), list=[];
+  for(const r of p.rows){const code=String(r[c]??"").trim(); if(!code||seen.has(norm(code)))continue; seen.add(norm(code));
+    list.push({c:code,d:d>=0?String(r[d]??"").trim():"",l:l>=0?String(r[l]??"").trim():""})}
+  if(!list.length){toast("Нема шифри во избраната колона");return}
+  try{await S.fs.doc("config/items").set({list,updatedAt:Date.now(),by:S.uid});S.pendingImport=null;toast(`Зачувани ${list.length} артикли`);renderSetup()}
+  catch(e){toast("Не се зачува. Провери интернет.")}
+}
+
+/* ---------- sessions & lines ---------- */
+async function newSession(){
+  const name=($("#newName").value||"").trim()||"Попис М-109";
+  const ref=S.fs.collection("sessions").doc();
+  try{await ref.set({name,createdAt:Date.now(),by:S.uid,closed:false});S.sid=ref.id;store.set("popis-sid",ref.id);watchLines();toast("Пописот е отворен");
+    document.querySelector('nav button[data-tab="count"]').click()}catch(e){toast("Не се зачува. Провери интернет.")}
+}
+async function closeSession(){
+  const s=cur(); if(!s||!confirm(`Да се затвори „${s.name}“? Потоа нема да може да се додава.`)) return;
+  try{await S.fs.doc("sessions/"+s.id).update({closed:true,closedAt:Date.now()});toast("Пописот е затворен")}catch(e){toast("Не се зачува.")}
+}
+$("#sessionSel").onchange=e=>{S.sid=e.target.value;store.set("popis-sid",S.sid);watchLines();render()};
+function addLine(code,qty){
+  // без await: ако нема интернет, внесот се чува на телефонот и се праќа подоцна
+  S.fs.collection("sessions/"+S.sid+"/lines").add({code,qty,by:S.uid,byName:S.name,at:Date.now()})
+    .catch(()=>toast("Внесот не е зачуван. Пробај пак."));
+}
+function delLine(id){
+  if(!confirm("Да се избрише овој внес?")) return;
+  S.fs.doc("sessions/"+S.sid+"/lines/"+id).delete().catch(()=>toast("Не се избриша."));
+}
+
+/* ---------- count sheet ---------- */
+function openSheet(h){$("#sheet").innerHTML=h;$("#sheetBg").classList.add("open")}
+function closeSheet(){$("#sheetBg").classList.remove("open")}
+$("#sheetBg").onclick=e=>{if(e.target.id==="sheetBg")closeSheet()};
+function showItem(raw){
+  const code=matchCode(raw); if(!code) return;
+  const it=S.itemMap.get(norm(code)), t=totals().get(norm(code));
+  openSheet(`<p class="scode">${esc(code)}</p><p class="sdesc">${esc(it?it.d:"")}${it&&it.l?` <span class="loc">${esc(it.l)}</span>`:""}</p>
+    ${it?"":`<div class="unknown">Овој код го нема во листата на артикли. Провери дали е точен; можеш сепак да го избројиш.</div>`}
+    <div class="already">${t?`Веќе изброено: <b>${fmt(t.qty)}</b>${t.n>1?` (${t.n} внеси)`:""}`:"Сè уште не е броен."}</div>
+    <input class="bigqty" id="qtyIn" type="text" inputmode="decimal" autocomplete="off" placeholder="0" aria-label="Количина">
+    <div class="hint">${t?"Количината се додава на веќе изброеното (на пр. резервен бин).":"Внеси колку парчиња има во бинот."}</div>
+    <div class="btns"><button class="btn ghost" id="cancelQ">Откажи</button><button class="btn" id="okQ">${S.liveOk?"Зачувај и скенирај следно":"Зачувај"}</button></div>`);
+  const qi=$("#qtyIn"); setTimeout(()=>qi.focus(),50);
+  const go=()=>{const v=parseFloat(String(qi.value).replace(/\s/g,"").replace(",","."));
+    if(!isFinite(v)||v<0){qi.focus();toast("Внеси количина");return}
+    addLine(code,v); closeSheet(); toast(`${code}: ${fmt(v)} зачувано`); if(S.liveOk) startScan();};
+  $("#okQ").onclick=go; qi.onkeydown=e=>{if(e.key==="Enter")go()}; $("#cancelQ").onclick=closeSheet;
+}
+function manualEntry(){
+  stopScan();
+  openSheet(`<p class="scode" style="font-size:22px">Внеси шифра</p><input class="manual" id="manIn" autocomplete="off" autocapitalize="characters" placeholder="Шифра на артикл">
+    <div class="btns"><button class="btn ghost" id="manX">Откажи</button><button class="btn" id="manOk">Продолжи</button></div>`);
+  const mi=$("#manIn"); setTimeout(()=>mi.focus(),50);
+  const go=()=>{const v=mi.value.trim();if(!v){mi.focus();return}closeSheet();setTimeout(()=>showItem(v),60)};
+  $("#manOk").onclick=go; mi.onkeydown=e=>{if(e.key==="Enter")go()}; $("#manX").onclick=closeSheet;
+}
+
+/* ---------- scanning ---------- */
+let detector=null; try{if("BarcodeDetector" in window)detector=new BarcodeDetector({formats:["qr_code"]})}catch(e){}
+const cv=document.createElement("canvas"), cx=cv.getContext("2d",{willReadFrequently:true});
+async function decodeSource(src,w,h){
+  if(detector){try{const r=await detector.detect(src);if(r&&r[0])return r[0].rawValue}catch(e){}}
+  if(window.jsQR){const sc=Math.min(1,800/Math.max(w,h));cv.width=Math.round(w*sc);cv.height=Math.round(h*sc);
+    cx.drawImage(src,0,0,cv.width,cv.height);const d=cx.getImageData(0,0,cv.width,cv.height);
+    const r=jsQR(d.data,d.width,d.height,{inversionAttempts:"dontInvert"});if(r)return r.data}
+  return null;
+}
+async function startScan(){
+  const s=cur(); if(!s||s.closed) return;
+  if(!S.liveOk){$("#photoIn").click();return}
+  $("#cam").classList.add("open"); $("#camMsg").textContent="Насочи ја камерата кон QR-кодот на бинот";
+  try{
+    S.stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"}},audio:false});
+    const v=$("#video"); v.srcObject=S.stream; await v.play(); S.scanning=true; loop();
+  }catch(e){
+    S.liveOk=false; renderHeader();
+    $("#camMsg").textContent="Камерата во живо не е дозволена. Провери дали си дозволил пристап до камера, или притисни „Сликај“.";
+  }
+}
+async function loop(){
+  if(!S.scanning) return; const v=$("#video");
+  if(v.readyState>=2&&v.videoWidth){const r=await decodeSource(v,v.videoWidth,v.videoHeight);
+    if(r&&S.scanning){if(navigator.vibrate)try{navigator.vibrate(80)}catch(e){} stopScan(); showItem(r); return}}
+  setTimeout(()=>requestAnimationFrame(loop),120);
+}
+function stopScan(){S.scanning=false;if(S.stream){S.stream.getTracks().forEach(t=>t.stop());S.stream=null}$("#video").srcObject=null;$("#cam").classList.remove("open")}
+$("#scanBtn").onclick=startScan; $("#manualBtn").onclick=manualEntry;
+$("#camClose").onclick=stopScan; $("#camManual").onclick=manualEntry; $("#camPhoto").onclick=()=>$("#photoIn").click();
+$("#photoIn").onchange=e=>{const f=e.target.files[0];e.target.value="";if(!f)return;
+  const img=new Image(),url=URL.createObjectURL(f);
+  img.onload=async()=>{const r=await decodeSource(img,img.naturalWidth,img.naturalHeight);URL.revokeObjectURL(url);
+    if(r){stopScan();showItem(r)}else toast("QR-кодот не се гледа на сликата. Сликај одблиску.")};
+  img.src=url;};
+
+/* ---------- export ---------- */
+function exportXlsx(){
+  const s=cur(); if(!s) return;
+  const t=totals(), known=new Set(S.items.map(i=>norm(i.c)));
+  const sum=[["Шифра","Опис","Адреса","Изброено","Број на внеси"]];
+  for(const i of S.items){const x=t.get(norm(i.c));sum.push([i.c,i.d,i.l,x?x.qty:"",x?x.n:0])}
+  for(const [k,v] of t) if(!known.has(k)) sum.push([k,"Непознат артикл","",v.qty,v.n]);
+  const det=[["Шифра","Количина","Изброил","Време"]];
+  S.lines.slice().sort((a,b)=>(a.at||0)-(b.at||0)).forEach(l=>det.push([l.code,l.qty,l.byName||"",new Date(l.at).toLocaleString("mk-MK")]));
+  const wb=XLSX.utils.book_new(), w1=XLSX.utils.aoa_to_sheet(sum), w2=XLSX.utils.aoa_to_sheet(det);
+  w1["!cols"]=[{wch:16},{wch:40},{wch:12},{wch:10},{wch:12}]; w2["!cols"]=[{wch:16},{wch:10},{wch:22},{wch:20}];
+  XLSX.utils.book_append_sheet(wb,w1,"Збир"); XLSX.utils.book_append_sheet(wb,w2,"Сите внеси");
+  XLSX.writeFile(wb,(s.name||"popis").replace(/[\\/:*?"<>|]/g,"-")+".xlsx");
+}
+
+render();
+if(S.configErr){S.ready=true;render();}
+})();
+</script>
+</body>
+</html>
