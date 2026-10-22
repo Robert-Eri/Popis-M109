@@ -215,7 +215,7 @@ function startData(){
   stopData();
   S.unsub.push(S.fs.doc("config/items").onSnapshot(snap=>{
     const d=snap.exists?snap.data():null;
-    S.items=(d&&Array.isArray(d.list))?d.list:[];
+    S.items=(d&&Array.isArray(d.list))?d.list:[]; S.stockAt=d&&d.stockAt||null;
     S.itemMap=new Map(S.items.map(i=>[norm(i.c),i])); S.ready=true; render();
   },err=>{S.ready=true;toast("Нема пристап до базата. Провери ги правилата во Firebase.");render()}));
   S.unsub.push(S.fs.collection("sessions").onSnapshot(snap=>{
@@ -320,6 +320,22 @@ function renderOverview(){
   el.querySelectorAll("[data-f]").forEach(b=>b.onclick=()=>{S.filter=b.dataset.f;renderOverview()});
   const eb=$("#exportBtn"); if(eb) eb.onclick=exportXlsx;
 }
+function stockCard(){
+  let h=`<h2>Залиха од NAV</h2><div class="card"><p>${S.stockAt?`Последно внесена: <b>${esc(new Date(S.stockAt).toLocaleString("mk-MK"))}</b>. `:""}Пред секој попис вчитај свеж извадок од NAV со шифра и количина. Адресите и описите остануваат.</p>
+    ${S.stockReport?`<p style="color:var(--ok)">${esc(S.stockReport)}</p>`:""}
+    <div class="btns"><button class="btn" id="pickStock">Внеси залиха од NAV</button></div>
+    <input type="file" id="stockIn" accept=".xlsx,.xls,.csv" hidden></div>`;
+  if(S.pendingStock){
+    const p=S.pendingStock, opts=sel=>p.headers.map((x,i)=>`<option value="${i}"${i===sel?" selected":""}>${esc(x||("Колона "+(i+1)))}</option>`).join("");
+    h+=`<div class="card"><p><b>${p.rows.length}</b> реда во „${esc(p.file)}“. Провери кои колони се што:</p>
+      <label class="field"><span>Шифра на артикл</span><select id="sc">${opts(p.c)}</select></label>
+      <label class="field"><span>Количина во систем</span><select id="ss"><option value="-1">(избери)</option>${opts(p.sq)}</select></label>
+      <label class="field"><span>Опис (за нови артикли)</span><select id="sd"><option value="-1">(нема)</option>${opts(p.d)}</select></label>
+      <label style="display:flex;gap:8px;align-items:flex-start;margin-bottom:12px;font-size:15px"><input type="checkbox" id="sAdd" checked style="margin-top:4px"> Артиклите што ги има во NAV, а ги нема во листата, додај ги во листата</label>
+      <div class="btns"><button class="btn" id="saveStock">Ажурирај ја залихата</button><button class="btn ghost" id="cancelStock">Откажи</button></div></div>`;
+  }
+  return h;
+}
 function renderSetup(){
   const el=$("#tab-setup"), s=cur(), today=new Date().toLocaleDateString("mk-MK");
   let h=S.anon
@@ -344,6 +360,7 @@ function renderSetup(){
     h+=`<h2>Листа на артикли</h2><div class="card"><p>${S.items.length?`Во листата има <b>${S.items.length}</b> артикли. Нова листа ја заменува старата; изброеното останува.`:"Внеси Excel или CSV со шифра, опис и адреса на артиклите."}</p>
       <div class="btns"><button class="btn${S.items.length?" ghost":""}" id="pickFile">Избери Excel фајл</button></div>
       <input type="file" id="fileIn" accept=".xlsx,.xls,.csv" hidden></div>${imp}
+      ${S.items.length?stockCard():""}
       <h2>Попис</h2><div class="card"><label class="field"><span>Име на нов попис</span><input id="newName" value="Попис М-109, ${esc(today)}"></label>
       <div class="btns"><button class="btn" id="newSess">Отвори нов попис</button>
       ${s&&!s.closed?`<button class="btn ghost" id="closeSess">Затвори го „${esc(s.name)}“</button>`:""}</div></div>`;
@@ -363,6 +380,9 @@ function renderSetup(){
     $("#fileIn").onchange=e=>{const f=e.target.files[0];if(f)readFile(f);e.target.value=""};
     if(S.pendingImport){$("#saveImp").onclick=saveImport;$("#cancelImp").onclick=()=>{S.pendingImport=null;renderSetup()}}
     $("#newSess").onclick=newSession; const cs=$("#closeSess"); if(cs) cs.onclick=closeSession;
+    const ps=$("#pickStock"); if(ps){ ps.onclick=()=>{S.stockReport="";$("#stockIn").click()};
+      $("#stockIn").onchange=e=>{const f=e.target.files[0];if(f)readFile(f,"stock");e.target.value=""}; }
+    if(S.pendingStock){$("#saveStock").onclick=saveStock;$("#cancelStock").onclick=()=>{S.pendingStock=null;renderSetup()}}
   }
 }
 function render(){renderHeader();renderBanner();
@@ -370,7 +390,7 @@ function render(){renderHeader();renderBanner();
 
 /* ---------- import ---------- */
 const guess=(hs,re)=>hs.findIndex(x=>re.test(String(x||"").toLowerCase()));
-async function readFile(f){
+async function readFile(f,mode){
   try{
     const wb=XLSX.read(await f.arrayBuffer(),{type:"array"}), ws=wb.Sheets[wb.SheetNames[0]];
     const fmtA=XLSX.utils.sheet_to_json(ws,{header:1,defval:"",raw:false,blankrows:true});
@@ -383,7 +403,9 @@ async function readFile(f){
     let d=guess(hs,/опис|назив|desc|name|име/), l=guess(hs,/адрес|локац|location|bin|позиц|место/);
     let sq=guess(hs,/залих|систем|количин|qty|quantity|stock|inventory|кол\./);
     if(d===c)d=-1; if(l===c||l===d)l=-1; if(sq===c||sq===d||sq===l)sq=-1;
-    S.pendingImport={file:f.name,headers:hs,rows:aoa.slice(1),raw:raw.slice(1),c,d,l,sq}; renderSetup();
+    const pend={file:f.name,headers:hs,rows:aoa.slice(1),raw:raw.slice(1),c,d,l,sq};
+    if(mode==="stock") S.pendingStock=pend; else S.pendingImport=pend;
+    renderSetup();
   }catch(e){toast("Фајлот не може да се прочита")}
 }
 async function saveImport(){
@@ -391,9 +413,33 @@ async function saveImport(){
   p.rows.forEach((r,i)=>{const code=String(r[c]??"").trim(); if(!code||seen.has(norm(code)))return; seen.add(norm(code));
     const it={c:code,d:d>=0?String(r[d]??"").trim():"",l:l>=0?String(r[l]??"").trim():""};
     if(sq>=0){const n=toNum((p.raw[i]||[])[sq], r[sq]); if(n!==null) it.s=n;}
+    else { const old=S.itemMap.get(norm(code)); if(old&&typeof old.s==="number") it.s=old.s; }
     list.push(it)});
   if(!list.length){toast("Нема шифри во избраната колона");return}
-  try{await S.fs.doc("config/items").set({list,updatedAt:Date.now(),by:S.uid});S.pendingImport=null;toast(`Зачувани ${list.length} артикли`);renderSetup()}
+  const prevDoc=(await S.fs.doc("config/items").get().catch(()=>null));
+  const prevAt=prevDoc&&prevDoc.exists?prevDoc.data().stockAt:null;
+  const docData={list,updatedAt:Date.now(),by:S.uid}; if(sq>=0) docData.stockAt=Date.now(); else if(prevAt) docData.stockAt=prevAt;
+  try{await S.fs.doc("config/items").set(docData);S.pendingImport=null;toast(`Зачувани ${list.length} артикли`);renderSetup()}
+  catch(e){toast("Не се зачува. Провери интернет.")}
+}
+
+async function saveStock(){
+  const p=S.pendingStock, c=+$("#sc").value, d=+$("#sd").value, sq=+$("#ss").value;
+  if(sq<0){toast("Избери ја колоната со количина");return}
+  const stock=new Map();
+  p.rows.forEach((r,i)=>{const code=String(r[c]??"").trim(); if(!code) return;
+    const n=toNum((p.raw[i]||[])[sq], r[sq]); if(n===null) return;
+    const k=norm(code); const o=stock.get(k)||{c:code,d:d>=0?String(r[d]??"").trim():"",s:0}; o.s+=n; stock.set(k,o);});
+  if(!stock.size){toast("Нема количини во избраните колони");return}
+  let matched=0, missing=0, added=0;
+  const list=S.items.map(i=>{const x=stock.get(norm(i.c)); const it={c:i.c,d:i.d,l:i.l};
+    if(x){it.s=x.s;matched++;} else {missing++;} return it;});
+  const known=new Set(S.items.map(i=>norm(i.c)));
+  if($("#sAdd").checked) for(const [k,x] of stock) if(!known.has(k)){list.push({c:x.c,d:x.d,l:"",s:x.s});added++;}
+  try{await S.fs.doc("config/items").set({list,updatedAt:Date.now(),stockAt:Date.now(),by:S.uid});
+    S.pendingStock=null;
+    S.stockReport=`Ажурирано: ${matched} артикли.`+(missing?` ${missing} од листата ги нема во извадокот (без количина во систем).`:"")+(added?` Додадени ${added} нови артикли од NAV (без адреса).`:"");
+    toast("Залихата е внесена"); renderSetup();}
   catch(e){toast("Не се зачува. Провери интернет.")}
 }
 
