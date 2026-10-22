@@ -107,8 +107,8 @@ h2{font-size:15px;font-weight:700;margin:20px 0 8px;color:var(--muted)}
 .frame{position:absolute;left:50%;top:42%;width:min(64vw,280px);aspect-ratio:1;transform:translate(-50%,-50%);
   border:3px solid #fff;border-radius:14px;box-shadow:0 0 0 100vmax rgba(0,0,0,.45)}
 .ov-msg{position:absolute;left:16px;right:16px;top:calc(16px + env(safe-area-inset-top,0px));color:#fff;text-align:center;font-weight:600;text-shadow:0 1px 3px #000}
-.ov-bar{display:flex;gap:8px;padding:12px 16px calc(16px + env(safe-area-inset-bottom,0px));background:#000}
-.ov-bar button{flex:1;border:1px solid #555;background:#1b1b1b;color:#fff;border-radius:10px;padding:14px 8px;font-weight:600}
+.ov-bar{display:flex;flex-wrap:wrap;gap:8px;padding:12px 16px calc(16px + env(safe-area-inset-bottom,0px));background:#000}
+.ov-bar button{flex:1 1 30%;border:1px solid #555;background:#1b1b1b;color:#fff;border-radius:10px;padding:14px 8px;font-weight:600}
 .sheet-bg{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.5);display:none;align-items:flex-end;justify-content:center}
 .sheet-bg.open{display:flex}
 .sheet{background:var(--surface);width:100%;max-width:560px;border-radius:16px 16px 0 0;padding:18px 18px calc(18px + env(safe-area-inset-bottom,0px));max-height:92vh;overflow:auto}
@@ -169,7 +169,7 @@ h2{font-size:15px;font-weight:700;margin:20px 0 8px;color:var(--muted)}
   <div class="frame"></div>
   <div class="ov-msg" id="camMsg">Насочи ја камерата кон QR-кодот на бинот</div>
   <div id="camInfo" style="position:absolute;right:10px;bottom:calc(84px + env(safe-area-inset-bottom,0px));color:#aaa;font-size:11px"></div>
-  <div class="ov-bar"><button id="camPhoto">Сликај</button><button id="camManual">Внеси рачно</button><button id="camClose">Затвори</button></div>
+  <div class="ov-bar"><button id="camSwitch" hidden>Камера</button><button id="camTorch" hidden>Светло</button><button id="camZoom" hidden>Зум 2×</button><button id="camPhoto">Сликај</button><button id="camManual">Внеси рачно</button><button id="camClose">Затвори</button></div>
 </div>
 <input type="file" id="photoIn" accept="image/*" capture="environment" hidden>
 <div class="sheet-bg" id="sheetBg"><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
@@ -508,6 +508,9 @@ async function decodeSource(src,w,h,still){
   const m=Math.min(w,h), cs=Math.round(m*0.7), cx0=Math.round((w-cs)/2), cy0=Math.round((h-cs)/2);
   if(detector){
     try{const r=await detector.detect(src);if(r&&r[0])return r[0].rawValue}catch(e){}
+    try{ const sc=Math.min(2,1200/cs); cv.width=Math.round(cs*sc); cv.height=Math.round(cs*sc);
+      cx.drawImage(src,cx0,cy0,cs,cs,0,0,cv.width,cv.height);
+      const r2=await detector.detect(cv); if(r2&&r2[0]) return r2[0].rawValue; }catch(e){}
   }
   if(!window.jsQR) return null;
   if(still){
@@ -522,11 +525,30 @@ async function startScan(){
   if(!S.liveOk){$("#photoIn").click();return}
   $("#cam").classList.add("open"); $("#camInfo").textContent=""; $("#camMsg").textContent="QR-кодот стави го во белата рамка, на 10–20 cm од камерата";
   try{
-    S.stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:"environment"},width:{ideal:1920},height:{ideal:1080}}});
+    const camId=store.get("popis-cam");
+    const base={width:{ideal:1920},height:{ideal:1080}};
+    try{
+      S.stream=await navigator.mediaDevices.getUserMedia({audio:false,video:camId?{...base,deviceId:{exact:camId}}:{...base,facingMode:{ideal:"environment"}}});
+    }catch(err){
+      if(!camId) throw err; store.set("popis-cam","");
+      S.stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{...base,facingMode:{ideal:"environment"}}});
+    }
+    try{
+      const devs=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==="videoinput");
+      const back=devs.filter(d=>!/front|предн|user|selfie/i.test(d.label));
+      S.cams=back.length?back:devs;
+    }catch(e){S.cams=[]}
+    $("#camSwitch").hidden=!(S.cams&&S.cams.length>1);
     const tr=S.stream.getVideoTracks()[0];
     try{const caps=tr.getCapabilities?tr.getCapabilities():{}; if(caps.focusMode&&caps.focusMode.includes("continuous")) await tr.applyConstraints({advanced:[{focusMode:"continuous"}]});}catch(e){}
+    S.track=tr; S.torch=false; S.zoom=1;
+    try{const caps=tr.getCapabilities?tr.getCapabilities():{};
+      $("#camTorch").hidden=!caps.torch; $("#camTorch").textContent="Светло";
+      if(caps.zoom&&caps.zoom.max>=2){ S.zoomMax=Math.min(3,caps.zoom.max); $("#camZoom").hidden=false; $("#camZoom").textContent="Зум 2×"; } else $("#camZoom").hidden=true;
+    }catch(e){}
     const v=$("#video"); v.srcObject=S.stream; await v.play(); S.scanning=true;
-    setTimeout(()=>{ if(S.scanning) $("#camInfo").textContent=`${v.videoWidth}×${v.videoHeight}, ${detector?"BD":"JS"}`; },800);
+    setTimeout(()=>{ if(!S.scanning) return; const st=S.track&&S.track.getSettings?S.track.getSettings():{}; const ix=(S.cams||[]).findIndex(c=>c.deviceId===st.deviceId);
+      $("#camInfo").textContent=`камера ${ix>=0?ix+1:"?"}/${(S.cams||[]).length||1}, ${v.videoWidth}×${v.videoHeight}, ${detector?"BD":"JS"}`; },800);
     loop();
   }catch(e){
     $("#camInfo").textContent=(e&&e.name)||"";
@@ -541,6 +563,19 @@ async function loop(){
   setTimeout(()=>requestAnimationFrame(loop),60);
 }
 function stopScan(){S.scanning=false;if(S.stream){S.stream.getTracks().forEach(t=>t.stop());S.stream=null}$("#video").srcObject=null;$("#cam").classList.remove("open")}
+$("#camSwitch").onclick=async()=>{
+  if(!S.cams||S.cams.length<2) return;
+  const st=S.track&&S.track.getSettings?S.track.getSettings():{};
+  const ix=S.cams.findIndex(c=>c.deviceId===st.deviceId);
+  const next=S.cams[(ix+1)%S.cams.length];
+  store.set("popis-cam",next.deviceId);
+  stopScan(); setTimeout(startScan,150);
+};
+$("#camTorch").onclick=async()=>{ if(!S.track) return; S.torch=!S.torch;
+  try{await S.track.applyConstraints({advanced:[{torch:S.torch}]}); $("#camTorch").textContent=S.torch?"Светло ✓":"Светло";}catch(e){} };
+$("#camZoom").onclick=async()=>{ if(!S.track) return; S.zoom=S.zoom===1?2:1;
+  try{await S.track.applyConstraints({advanced:[{zoom:S.zoom}]}); $("#camZoom").textContent=S.zoom===1?"Зум 2×":"Зум 1×";}catch(e){} };
+$("#video").onclick=async()=>{ if(!S.track) return; try{await S.track.applyConstraints({advanced:[{focusMode:"single-shot"}]}); await S.track.applyConstraints({advanced:[{focusMode:"continuous"}]});}catch(e){} };
 $("#scanBtn").onclick=startScan; $("#manualBtn").onclick=manualEntry;
 $("#camClose").onclick=stopScan; $("#camManual").onclick=manualEntry; $("#camPhoto").onclick=()=>$("#photoIn").click();
 $("#photoIn").onchange=e=>{const f=e.target.files[0];e.target.value="";if(!f)return;
