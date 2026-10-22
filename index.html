@@ -240,6 +240,15 @@ document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{
   ["count","overview","setup"].forEach(t=>$("#tab-"+t).hidden=t!==S.tab); render();
 });
 function norm(c){return String(c??"").trim().toUpperCase()}
+function toNum(raw,txt){
+  if(typeof raw==="number"&&isFinite(raw)) return raw;
+  let s=String(txt??raw??"").replace(/\s/g,""); if(!s) return null;
+  const lc=s.lastIndexOf(","), ld=s.lastIndexOf(".");
+  if(lc>-1&&ld>-1){ s = lc>ld ? s.replace(/\./g,"").replace(",",".") : s.replace(/,/g,""); }
+  else if(lc>-1){ s=s.replace(",","."); }
+  const n=parseFloat(s); return isFinite(n)?n:null;
+}
+const hasSys=()=>S.items.some(i=>typeof i.s==="number");
 function totals(){const m=new Map();for(const l of S.lines){const k=norm(l.code);const o=m.get(k)||{qty:0,n:0};o.qty+=Number(l.qty)||0;o.n++;m.set(k,o)}return m}
 const cur=()=>S.sessions.find(s=>s.id===S.sid);
 const timeStr=t=>{try{return new Date(t).toLocaleString("mk-MK",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}catch(e){return ""}};
@@ -287,21 +296,25 @@ function renderCount(){
 }
 function renderOverview(){
   const el=$("#tab-overview"), t=totals(), known=new Set(S.items.map(i=>norm(i.c)));
-  let rows=S.items.map(i=>({c:i.c,d:i.d,l:i.l,tot:t.get(norm(i.c))}));
+  const showSys=S.admin&&hasSys();
+  let rows=S.items.map(i=>{const tot=t.get(norm(i.c));const s=typeof i.s==="number"?i.s:null;
+    return {c:i.c,d:i.d,l:i.l,tot,s,diff:s===null?null:((tot?tot.qty:0)-s)}});
   for(const [k,v] of t) if(!known.has(k)){const l=S.lines.find(x=>norm(x.code)===k);rows.push({c:l?l.code:k,d:"Непознат артикл (не е во листата)",l:"",tot:v})}
   const q=S.q.trim().toLowerCase();
   if(q) rows=rows.filter(r=>(r.c+" "+r.d+" "+r.l).toLowerCase().includes(q));
   if(S.filter==="todo") rows=rows.filter(r=>!r.tot);
   if(S.filter==="done") rows=rows.filter(r=>r.tot);
+  if(S.filter==="diff") rows=rows.filter(r=>r.tot&&r.diff!==null&&Math.abs(r.diff)>1e-9);
   rows.sort((a,b)=>String(a.l||"~").localeCompare(String(b.l||"~"),"mk",{numeric:true})||String(a.c).localeCompare(String(b.c),"mk",{numeric:true}));
   el.innerHTML=`<div class="tools"><input id="q" type="search" placeholder="Барај шифра, опис или адреса" value="${esc(S.q)}">
     <div class="chips"><button class="chip" data-f="all" aria-pressed="${S.filter==="all"}">Сите</button>
     <button class="chip" data-f="todo" aria-pressed="${S.filter==="todo"}">Неизброени</button>
-    <button class="chip" data-f="done" aria-pressed="${S.filter==="done"}">Изброени</button></div></div>
+    <button class="chip" data-f="done" aria-pressed="${S.filter==="done"}">Изброени</button>
+    ${showSys?`<button class="chip" data-f="diff" aria-pressed="${S.filter==="diff"}">Со разлика</button>`:""}</div></div>
     ${cur()?`<div class="tools"><button class="btn ghost" id="exportBtn">Симни Excel од овој попис</button></div>`:""}
     ${rows.length?`<div class="list">${rows.map(r=>`<div class="row ${r.tot?"done":"todo"}"><div class="main">
       <div class="code">${esc(r.c)}${r.l?`<span class="loc">${esc(r.l)}</span>`:""}</div><div class="desc">${esc(r.d)}</div></div>
-      <div><div class="qty">${r.tot?fmt(r.tot.qty):"–"}</div>${r.tot&&r.tot.n>1?`<div class="meta">${r.tot.n} внеси</div>`:""}</div></div>`).join("")}</div>`
+      <div><div class="qty">${r.tot?fmt(r.tot.qty):"–"}</div>${showSys&&r.s!==null?`<div class="meta">систем ${fmt(r.s)}${r.tot?`, <b style="color:${Math.abs(r.diff)<1e-9?"var(--ok)":"var(--danger)"}">${r.diff>0?"+":""}${fmt(r.diff)}</b>`:""}</div>`:""}${r.tot&&r.tot.n>1?`<div class="meta">${r.tot.n} внеси</div>`:""}</div></div>`).join("")}</div>`
     :`<div class="empty">${S.items.length?"Нема артикли за овој филтер.":"Листата на артикли е празна."}</div>`}`;
   const qi=$("#q"); qi.oninput=()=>{S.q=qi.value;const p=qi.selectionStart;renderOverview();const n=$("#q");n.focus();try{n.setSelectionRange(p,p)}catch(e){}};
   el.querySelectorAll("[data-f]").forEach(b=>b.onclick=()=>{S.filter=b.dataset.f;renderOverview()});
@@ -325,6 +338,7 @@ function renderSetup(){
         <label class="field"><span>Шифра на артикл</span><select id="mc">${opts(p.c)}</select></label>
         <label class="field"><span>Опис</span><select id="md"><option value="-1">(нема)</option>${opts(p.d)}</select></label>
         <label class="field"><span>Адреса (локација)</span><select id="ml"><option value="-1">(нема)</option>${opts(p.l)}</select></label>
+        <label class="field"><span>Количина во систем (ја гледа само раководителот)</span><select id="ms"><option value="-1">(нема)</option>${opts(p.sq)}</select></label>
         <div class="btns"><button class="btn" id="saveImp">Зачувај ја листата</button><button class="btn ghost" id="cancelImp">Откажи</button></div></div>`;
     }
     h+=`<h2>Листа на артикли</h2><div class="card"><p>${S.items.length?`Во листата има <b>${S.items.length}</b> артикли. Нова листа ја заменува старата; изброеното останува.`:"Внеси Excel или CSV со шифра, опис и адреса на артиклите."}</p>
@@ -359,19 +373,25 @@ const guess=(hs,re)=>hs.findIndex(x=>re.test(String(x||"").toLowerCase()));
 async function readFile(f){
   try{
     const wb=XLSX.read(await f.arrayBuffer(),{type:"array"}), ws=wb.Sheets[wb.SheetNames[0]];
-    const aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:"",raw:false}).filter(r=>r.some(c=>String(c).trim()!==""));
+    const fmtA=XLSX.utils.sheet_to_json(ws,{header:1,defval:"",raw:false,blankrows:true});
+    const rawA=XLSX.utils.sheet_to_json(ws,{header:1,defval:"",raw:true,blankrows:true});
+    const keep=fmtA.map((r,i)=>r.some(c=>String(c).trim()!=="")?i:-1).filter(i=>i>=0);
+    const aoa=keep.map(i=>fmtA[i]), raw=keep.map(i=>rawA[i]||[]);
     if(aoa.length<2){toast("Фајлот е празен");return}
     const hs=aoa[0].map(String);
     let c=guess(hs,/шифр|код|code|артикл|item|^no|број/); if(c<0)c=0;
     let d=guess(hs,/опис|назив|desc|name|име/), l=guess(hs,/адрес|локац|location|bin|позиц|место/);
-    if(d===c)d=-1; if(l===c||l===d)l=-1;
-    S.pendingImport={file:f.name,headers:hs,rows:aoa.slice(1),c,d,l}; renderSetup();
+    let sq=guess(hs,/залих|систем|количин|qty|quantity|stock|inventory|кол\./);
+    if(d===c)d=-1; if(l===c||l===d)l=-1; if(sq===c||sq===d||sq===l)sq=-1;
+    S.pendingImport={file:f.name,headers:hs,rows:aoa.slice(1),raw:raw.slice(1),c,d,l,sq}; renderSetup();
   }catch(e){toast("Фајлот не може да се прочита")}
 }
 async function saveImport(){
-  const p=S.pendingImport, c=+$("#mc").value, d=+$("#md").value, l=+$("#ml").value, seen=new Set(), list=[];
-  for(const r of p.rows){const code=String(r[c]??"").trim(); if(!code||seen.has(norm(code)))continue; seen.add(norm(code));
-    list.push({c:code,d:d>=0?String(r[d]??"").trim():"",l:l>=0?String(r[l]??"").trim():""})}
+  const p=S.pendingImport, c=+$("#mc").value, d=+$("#md").value, l=+$("#ml").value, sq=+$("#ms").value, seen=new Set(), list=[];
+  p.rows.forEach((r,i)=>{const code=String(r[c]??"").trim(); if(!code||seen.has(norm(code)))return; seen.add(norm(code));
+    const it={c:code,d:d>=0?String(r[d]??"").trim():"",l:l>=0?String(r[l]??"").trim():""};
+    if(sq>=0){const n=toNum((p.raw[i]||[])[sq], r[sq]); if(n!==null) it.s=n;}
+    list.push(it)});
   if(!list.length){toast("Нема шифри во избраната колона");return}
   try{await S.fs.doc("config/items").set({list,updatedAt:Date.now(),by:S.uid});S.pendingImport=null;toast(`Зачувани ${list.length} артикли`);renderSetup()}
   catch(e){toast("Не се зачува. Провери интернет.")}
@@ -468,13 +488,16 @@ $("#photoIn").onchange=e=>{const f=e.target.files[0];e.target.value="";if(!f)ret
 function exportXlsx(){
   const s=cur(); if(!s) return;
   const t=totals(), known=new Set(S.items.map(i=>norm(i.c)));
-  const sum=[["Шифра","Опис","Адреса","Изброено","Број на внеси"]];
-  for(const i of S.items){const x=t.get(norm(i.c));sum.push([i.c,i.d,i.l,x?x.qty:"",x?x.n:0])}
-  for(const [k,v] of t) if(!known.has(k)) sum.push([k,"Непознат артикл","",v.qty,v.n]);
+  const sys=S.admin&&hasSys();
+  const sum=[sys?["Шифра","Опис","Адреса","Во систем","Изброено","Разлика","Број на внеси"]:["Шифра","Опис","Адреса","Изброено","Број на внеси"]];
+  for(const i of S.items){const x=t.get(norm(i.c)), s=typeof i.s==="number"?i.s:null;
+    if(sys) sum.push([i.c,i.d,i.l,s===null?"":s,x?x.qty:"",(x&&s!==null)?x.qty-s:"",x?x.n:0]);
+    else sum.push([i.c,i.d,i.l,x?x.qty:"",x?x.n:0]);}
+  for(const [k,v] of t) if(!known.has(k)) sum.push(sys?[k,"Непознат артикл","","",v.qty,"",v.n]:[k,"Непознат артикл","",v.qty,v.n]);
   const det=[["Шифра","Количина","Изброил","Време"]];
   S.lines.slice().sort((a,b)=>(a.at||0)-(b.at||0)).forEach(l=>det.push([l.code,l.qty,l.byName||"",new Date(l.at).toLocaleString("mk-MK")]));
   const wb=XLSX.utils.book_new(), w1=XLSX.utils.aoa_to_sheet(sum), w2=XLSX.utils.aoa_to_sheet(det);
-  w1["!cols"]=[{wch:16},{wch:40},{wch:12},{wch:10},{wch:12}]; w2["!cols"]=[{wch:16},{wch:10},{wch:22},{wch:20}];
+  w1["!cols"]=sys?[{wch:16},{wch:40},{wch:12},{wch:11},{wch:10},{wch:10},{wch:12}]:[{wch:16},{wch:40},{wch:12},{wch:10},{wch:12}]; w2["!cols"]=[{wch:16},{wch:10},{wch:22},{wch:20}];
   XLSX.utils.book_append_sheet(wb,w1,"Збир"); XLSX.utils.book_append_sheet(wb,w2,"Сите внеси");
   XLSX.writeFile(wb,(s.name||"popis").replace(/[\\/:*?"<>|]/g,"-")+".xlsx");
 }
