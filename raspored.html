@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="mk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Распоред М-109</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+:root{
+  --bg:#E9ECEF; --paper:#FFFFFF; --ink:#1B2430; --muted:#5B6673;
+  --steel:#1F4E79; --beam:#E8772E; --ok:#2E7D4F; --warn:#B45309; --line:#CBD2D9;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#151A21; --paper:#1F2630; --ink:#E6EAEE; --muted:#9AA5B1;
+    --steel:#7FB0DC; --beam:#F08A45; --ok:#5CC08A; --warn:#F2A541; --line:#323C48;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#151A21; --paper:#1F2630; --ink:#E6EAEE; --muted:#9AA5B1;
+  --steel:#7FB0DC; --beam:#F08A45; --ok:#5CC08A; --warn:#F2A541; --line:#323C48;
+  color-scheme: dark;
+}
+:root{ box-sizing:border-box; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px); }
+*,*::before,*::after{ box-sizing:inherit; }
+html{ scroll-padding-top:env(safe-area-inset-top,0px); }
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:"Barlow", "Segoe UI", Roboto, Arial, sans-serif; font-size:17px; line-height:1.4;
+}
+main{ max-width:520px; margin:0 auto; padding:12px 14px 120px; }
+h1{ font-family:"Barlow Condensed", "Arial Narrow", Arial, sans-serif; font-weight:600; font-size:20px; margin:4px 0 12px; color:var(--muted); }
+
+/* the rack label: the one bold element */
+.label{
+  background:var(--paper); border:2px solid var(--ink); border-radius:6px;
+  display:grid; grid-template-columns:56px 1fr 56px; align-items:stretch; overflow:hidden;
+}
+.label button{
+  border:0; background:transparent; color:var(--ink); font-size:28px; cursor:pointer; min-height:88px;
+}
+.label button:active{ background:var(--bg); }
+.addr{
+  border:0; background:transparent; color:var(--ink); cursor:pointer; padding:6px 0;
+  border-left:2px solid var(--ink); border-right:2px solid var(--ink);
+  font-family:"Barlow Condensed", "Arial Narrow", Arial, sans-serif; font-weight:700;
+  font-size:52px; letter-spacing:1px; line-height:1;
+}
+.addr small{ display:block; font-family:"Barlow", Arial, sans-serif; font-weight:500; font-size:13px; letter-spacing:0; color:var(--muted); margin-top:6px; }
+.beam{ height:8px; background:var(--beam); border-radius:0 0 4px 4px; margin:0 6px 14px; }
+
+#grid{ display:none; grid-template-columns:repeat(3,1fr); gap:6px; margin:-6px 0 14px; }
+#grid.open{ display:grid; }
+#grid button{
+  font:600 17px "Barlow Condensed", Arial, sans-serif; padding:10px 4px; border-radius:4px;
+  border:1px solid var(--line); background:var(--paper); color:var(--ink); cursor:pointer;
+}
+#grid button.cur{ outline:3px solid var(--beam); outline-offset:-1px; }
+#grid button span{ display:block; font:400 12px "Barlow", Arial, sans-serif; color:var(--muted); }
+#grid button.has span{ color:var(--ok); font-weight:600; }
+
+.cam{ background:var(--paper); border:1px solid var(--line); border-radius:6px; padding:10px; }
+#reader{ width:100%; border-radius:4px; overflow:hidden; }
+#reader video{ border-radius:4px; }
+.row{ display:flex; gap:8px; margin-top:10px; }
+.btn{
+  flex:1; font:600 17px "Barlow", Arial, sans-serif; padding:13px 10px; border-radius:6px; cursor:pointer;
+  border:2px solid var(--steel); background:var(--steel); color:#fff;
+}
+.btn.ghost{ background:transparent; color:var(--steel); }
+.btn:focus-visible, .addr:focus-visible, .label button:focus-visible, #grid button:focus-visible, input:focus-visible{ outline:3px solid var(--beam); outline-offset:2px; }
+.manual{ display:flex; gap:8px; margin-top:10px; }
+.manual input{
+  flex:1; min-width:0; font:500 17px "Barlow", Arial, sans-serif; padding:11px; border-radius:6px;
+  border:1px solid var(--line); background:var(--bg); color:var(--ink);
+}
+.manual .btn{ flex:0 0 auto; }
+
+#msg{ min-height:24px; margin:10px 2px 4px; font-weight:500; }
+#msg.ok{ color:var(--ok); } #msg.warn{ color:var(--warn); }
+
+h2{ font:600 18px "Barlow", Arial, sans-serif; margin:18px 2px 8px; }
+ul{ list-style:none; margin:0; padding:0; background:var(--paper); border:1px solid var(--line); border-radius:6px; }
+li{ display:flex; align-items:center; gap:10px; padding:10px 12px; border-top:1px solid var(--line); }
+li:first-child{ border-top:0; }
+li .code{ font-weight:600; white-space:nowrap; }
+li .desc{ flex:1; font-size:14px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+li button{ border:0; background:transparent; color:var(--muted); font-size:22px; cursor:pointer; padding:4px 8px; }
+.empty{ padding:14px 12px; color:var(--muted); }
+
+.bar{
+  position:fixed; left:0; right:0; bottom:0; background:var(--paper); border-top:1px solid var(--line);
+  padding:10px 14px calc(10px + env(safe-area-inset-bottom,0px));
+}
+.bar .in{ max-width:520px; margin:0 auto; display:flex; gap:8px; align-items:center; }
+.bar .total{ flex:1; font-size:15px; color:var(--muted); }
+.bar .total b{ color:var(--ink); font-size:18px; }
+.bar .btn{ flex:0 0 auto; padding:11px 14px; font-size:16px; }
+.clear{ display:block; margin:22px auto 0; background:none; border:0; color:var(--muted); text-decoration:underline; font:400 15px "Barlow", Arial, sans-serif; cursor:pointer; }
+@media (prefers-reduced-motion: reduce){ *{ transition:none!important; animation:none!important; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Распоред М-109 – скенирање на кутии по адреса</h1>
+
+  <div class="label">
+    <button id="prev" aria-label="Претходна адреса">◀</button>
+    <button class="addr" id="addr" aria-label="Избери адреса">A01-1-01<small>допри за листа на адреси</small></button>
+    <button id="next" aria-label="Следна адреса">▶</button>
+  </div>
+  <div class="beam"></div>
+  <div id="grid"></div>
+
+  <div class="cam">
+    <div id="reader"></div>
+    <div class="row">
+      <button class="btn" id="camBtn">Вклучи камера</button>
+    </div>
+    <div class="manual">
+      <input id="manual" placeholder="или впиши шифра рачно" autocomplete="off">
+      <button class="btn ghost" id="addManual">Додај</button>
+    </div>
+  </div>
+
+  <div id="msg" role="status"></div>
+
+  <h2 id="listTitle">На оваа адреса</h2>
+  <ul id="list"></ul>
+
+  <button class="clear" id="clearAll">Избриши ги сите записи</button>
+</main>
+
+<div class="bar"><div class="in">
+  <div class="total">Вкупно скенирани: <b id="total">0</b></div>
+  <button class="btn" id="export">Симни за Excel</button>
+</div></div>
+
+<script>
+const WAREHOUSE = "109";
+const ADDRESSES = [];
+[["A01",1],["A01",2],["A02",2]].forEach(([r,l])=>{ for(let p=1;p<=6;p++) ADDRESSES.push(`${r}-${l}-${String(p).padStart(2,"0")}`); });
+const KEY = "raspored-m109-v1";
+
+let data = [];      // {addr, code, desc, t}
+let idx = 0;
+try { const s = JSON.parse(localStorage.getItem(KEY)||"{}"); data = s.data||[]; idx = Math.min(s.idx||0, ADDRESSES.length-1); } catch(e){}
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify({data, idx})); }catch(e){} }
+
+const $ = id => document.getElementById(id);
+function cur(){ return ADDRESSES[idx]; }
+
+function render(){
+  $("addr").innerHTML = `${cur()}<small>допри за листа на адреси</small>`;
+  $("listTitle").textContent = `На адреса ${cur()}`;
+  const here = data.filter(d=>d.addr===cur());
+  $("list").innerHTML = here.length ? here.map(d=>`
+    <li><span class="code">${esc(d.code)}</span><span class="desc">${esc(d.desc||"")}</span>
+    <button aria-label="Избриши ${esc(d.code)}" data-t="${d.t}">×</button></li>`).join("")
+    : `<li class="empty">Нема скенирани кутии. Скенирај го QR-кодот на секоја кутија на оваа адреса.</li>`;
+  $("total").textContent = data.length;
+  $("grid").innerHTML = ADDRESSES.map((a,i)=>{
+    const n = data.filter(d=>d.addr===a).length;
+    return `<button class="${i===idx?"cur":""} ${n?"has":""}" data-i="${i}">${a}<span>${n?n+" арт.":"празно"}</span></button>`;
+  }).join("");
+}
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function msg(t, cls){ const m=$("msg"); m.textContent=t; m.className=cls||""; }
+
+function parse(text){
+  const t = String(text).trim();
+  const m = t.match(/\b[A-Z]\d{6,8}\b/);
+  let code, desc;
+  if(m){ code=m[0]; desc=t.replace(m[0],""); }
+  else { const parts=t.split(/[|;\t\n]+/); code=parts.shift().trim(); desc=parts.join(" "); }
+  desc = desc.replace(/^[\s|;,:\-–\t]+/,"").replace(/[\s|;\t]+/g," ").trim();
+  return {code, desc};
+}
+
+let ctx;
+function beep(ok){
+  try{ ctx = ctx || new (window.AudioContext||window.webkitAudioContext)();
+    const o=ctx.createOscillator(), g=ctx.createGain(); o.frequency.value= ok?1200:400; g.gain.value=0.08;
+    o.connect(g); g.connect(ctx.destination); o.start(); o.stop(ctx.currentTime+(ok?0.12:0.3)); }catch(e){}
+  if(navigator.vibrate) navigator.vibrate(ok?80:[80,60,80]);
+}
+
+let lastText="", lastTime=0;
+function add(raw){
+  const {code, desc} = parse(raw);
+  if(!code){ msg("Кодот не може да се прочита. Пробај пак.","warn"); beep(false); return; }
+  if(data.some(d=>d.addr===cur() && d.code===code)){ msg(`${code} е веќе на ${cur()}.`,"warn"); beep(false); return; }
+  const other = data.find(d=>d.code===code);
+  data.push({addr:cur(), code, desc, t:Date.now()});
+  save(); render();
+  if(other){ msg(`${code} додаден. Внимание: истиот артикл е и на ${other.addr} (во ред ако е резерва).`,"warn"); beep(false); }
+  else { msg(`${code} додаден на ${cur()}.`,"ok"); beep(true); }
+}
+
+let scanner=null, running=false;
+async function toggleCam(){
+  if(!window.Html5Qrcode){ msg("Скенерот не се вчита. Провери интернет и освежи ја страната.","warn"); return; }
+  if(running){ await scanner.stop(); running=false; $("camBtn").textContent="Вклучи камера"; return; }
+  scanner = scanner || new Html5Qrcode("reader");
+  try{
+    await scanner.start({facingMode:"environment"}, {fps:10, qrbox:{width:230,height:230}}, text=>{
+      const now=Date.now();
+      if(text===lastText && now-lastTime<3000) return;
+      lastText=text; lastTime=now; add(text);
+    });
+    running=true; $("camBtn").textContent="Исклучи камера";
+  }catch(e){ msg("Камерата не се вклучи. Дозволи пристап до камерата во прелистувачот.","warn"); }
+}
+
+function move(d){ idx=(idx+d+ADDRESSES.length)%ADDRESSES.length; lastText=""; save(); render(); msg(""); }
+
+function exportCsv(){
+  if(!data.length){ msg("Нема ништо за симнување.","warn"); return; }
+  const rows=[["Магацин","Адреса","Шифра на артикл","Опис"]];
+  [...data].sort((a,b)=>ADDRESSES.indexOf(a.addr)-ADDRESSES.indexOf(b.addr)||a.t-b.t)
+    .forEach(d=>rows.push([WAREHOUSE,d.addr,d.code,d.desc]));
+  const csv="\uFEFF"+rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(";")).join("\r\n");
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));
+  a.download=`raspored_M109_${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  msg("Фајлот е симнат. Отвори го со Excel.","ok");
+}
+
+$("prev").onclick=()=>move(-1);
+$("next").onclick=()=>move(1);
+$("addr").onclick=()=>$("grid").classList.toggle("open");
+$("grid").onclick=e=>{ const b=e.target.closest("button"); if(!b) return; idx=+b.dataset.i; $("grid").classList.remove("open"); lastText=""; save(); render(); msg(""); };
+$("list").onclick=e=>{ const b=e.target.closest("button[data-t]"); if(!b) return; data=data.filter(d=>String(d.t)!==b.dataset.t); save(); render(); msg("Избришано.",""); };
+$("camBtn").onclick=toggleCam;
+$("addManual").onclick=()=>{ const v=$("manual").value.trim(); if(v){ add(v.toUpperCase()); $("manual").value=""; } };
+$("manual").onkeydown=e=>{ if(e.key==="Enter") $("addManual").click(); };
+$("export").onclick=exportCsv;
+$("clearAll").onclick=()=>{ if(confirm("Да се избришат сите скенирани записи на овој телефон? Прво симни го фајлот ако ти треба.")){ data=[]; save(); render(); msg("Сите записи се избришани.",""); } };
+render();
+</script>
+</body>
+</html>
