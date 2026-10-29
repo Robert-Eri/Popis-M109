@@ -362,6 +362,9 @@ function renderSetup(){
       <div class="btns"><button class="btn${S.items.length?" ghost":""}" id="pickFile">Избери Excel фајл</button></div>
       <input type="file" id="fileIn" accept=".xlsx,.xls,.csv" hidden></div>${imp}
       ${S.items.length?stockCard():""}
+      ${S.items.length?`<h2>Пописна листа за печатење</h2><div class="card"><p>Листа за хартија со сите ${S.items.length} артикли, подредени по адреса, со празна колона за изброено.</p>
+        <label style="display:flex;gap:8px;align-items:center;margin-bottom:12px;font-size:15px"><input type="checkbox" id="prSys" checked> Со количина од NAV</label>
+        <div class="btns"><button class="btn" id="printBtn">Печати пописна листа</button></div></div>`:""}
       <h2>Попис</h2><div class="card"><label class="field"><span>Име на нов попис</span><input id="newName" value="Попис М-109, ${esc(today)}"></label>
       <div class="btns"><button class="btn" id="newSess">Отвори нов попис</button>
       ${s&&!s.closed?`<button class="btn ghost" id="closeSess">Затвори го „${esc(s.name)}“</button>`:""}</div></div>`;
@@ -381,6 +384,7 @@ function renderSetup(){
     $("#fileIn").onchange=e=>{const f=e.target.files[0];if(f)readFile(f);e.target.value=""};
     if(S.pendingImport){$("#saveImp").onclick=saveImport;$("#cancelImp").onclick=()=>{S.pendingImport=null;renderSetup()}}
     $("#newSess").onclick=newSession; const cs=$("#closeSess"); if(cs) cs.onclick=closeSession;
+    const pb=$("#printBtn"); if(pb) pb.onclick=()=>printSheet($("#prSys").checked);
     const ps=$("#pickStock"); if(ps){ ps.onclick=()=>{S.stockReport="";$("#stockIn").click()};
       $("#stockIn").onchange=e=>{const f=e.target.files[0];if(f)readFile(f,"stock");e.target.value=""}; }
     if(S.pendingStock){$("#saveStock").onclick=saveStock;$("#cancelStock").onclick=()=>{S.pendingStock=null;renderSetup()}}
@@ -442,6 +446,29 @@ async function saveStock(){
     S.stockReport=`Ажурирано: ${matched} артикли.`+(missing?` ${missing} од листата ги нема во извадокот (без количина во систем).`:"")+(added?` Додадени ${added} нови артикли од NAV (без адреса).`:"");
     toast("Залихата е внесена"); renderSetup();}
   catch(e){toast("Не се зачува. Провери интернет.")}
+}
+
+function printSheet(withSys){
+  const rows=S.items.slice().sort((a,b)=>String(a.l||"~").localeCompare(String(b.l||"~"),"mk",{numeric:true})||String(a.c).localeCompare(String(b.c),"mk",{numeric:true}));
+  const s=cur(); const title=s&&!s.closed?s.name:("Попис М-109, "+new Date().toLocaleDateString("mk-MK"));
+  const stock=S.stockAt?new Date(S.stockAt).toLocaleString("mk-MK"):"";
+  const head=`<tr><th>Р.бр.</th><th>Адреса</th><th>Шифра</th><th>Опис</th>${withSys?"<th>Во систем</th>":""}<th>Изброено</th>${withSys?"<th>Разлика</th>":""}<th>Забелешка</th></tr>`;
+  const body=rows.map((r,i)=>`<tr><td class="n">${i+1}</td><td>${esc(r.l||"")}</td><td class="c">${esc(r.c)}</td><td>${esc(r.d||"")}</td>${withSys?`<td class="n">${typeof r.s==="number"?fmt(r.s):""}</td>`:""}<td class="w"></td>${withSys?`<td class="w"></td>`:""}<td class="w2"></td></tr>`).join("");
+  const html=`<!doctype html><html lang="mk"><head><meta charset="utf-8"><title>${esc(title)}</title>
+<style>@page{size:A4 portrait;margin:12mm}body{font-family:Arial,sans-serif;font-size:10pt;color:#000}
+h1{font-size:15pt;margin:0 0 4px}.meta{font-size:9.5pt;margin-bottom:10px}
+table{width:100%;border-collapse:collapse}th,td{border:1px solid #000;padding:5px 4px;vertical-align:top}
+th{background:#e6e6e6;font-size:9pt;text-align:left}thead{display:table-header-group}tr{page-break-inside:avoid}
+td.n{text-align:right;white-space:nowrap}td.c{white-space:nowrap;font-weight:bold}td.w{width:16mm}td.w2{width:28mm}
+.sign{margin-top:18px;display:flex;gap:40px;font-size:10pt}.sign div{flex:1;border-top:1px solid #000;padding-top:4px}</style></head>
+<body><h1>${esc(title)}</h1>
+<div class="meta">Магацин 109${withSys&&stock?` · Залиха од NAV: ${esc(stock)}`:""} · Артикли: ${rows.length}<br>Бројач: ______________________ &nbsp; Датум: ____________ &nbsp; Сталажа/ниво: ____________</div>
+<table><thead>${head}</thead><tbody>${body}</tbody></table>
+<div class="sign"><div>Изброил (потпис)</div><div>Контролирал (потпис)</div></div>
+<script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script></body></html>`;
+  const w=window.open("","_blank");
+  if(!w){toast("Прелистувачот го блокира прозорецот. Дозволи pop-up за оваа страница.");return}
+  w.document.open(); w.document.write(html); w.document.close();
 }
 
 /* ---------- sessions & lines ---------- */
