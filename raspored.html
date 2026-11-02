@@ -65,7 +65,7 @@ h1{ font-family:"Barlow Condensed", "Arial Narrow", Arial, sans-serif; font-weig
 
 .cam{ background:var(--paper); border:1px solid var(--line); border-radius:6px; padding:10px; }
 #reader{ width:100%; border-radius:4px; overflow:hidden; }
-#reader video{ border-radius:4px; }
+#reader video{ width:100%; display:block; border-radius:4px; background:#000; }
 .row{ display:flex; gap:8px; margin-top:10px; }
 .btn{
   flex:1; font:600 17px "Barlow", Arial, sans-serif; padding:13px 10px; border-radius:6px; cursor:pointer;
@@ -106,11 +106,11 @@ li button{ border:0; background:transparent; color:var(--muted); font-size:22px;
 </head>
 <body>
 <main>
-  <h1>Распоред М-109 – скенирање на кутии по адреса</h1>
+  <h1>Распоред М-109 – скенирај адреса, па кутиите</h1>
 
   <div class="label">
     <button id="prev" aria-label="Претходна адреса">◀</button>
-    <button class="addr" id="addr" aria-label="Избери адреса">A01-1-01<small>допри за листа на адреси</small></button>
+    <button class="addr" id="addr" aria-label="Избери адреса">A01-1-01<small>скенирај QR на гредата или допри за листа</small></button>
     <button id="next" aria-label="Следна адреса">▶</button>
   </div>
   <div class="beam"></div>
@@ -120,6 +120,7 @@ li button{ border:0; background:transparent; color:var(--muted); font-size:22px;
     <div id="reader"></div>
     <div class="row">
       <button class="btn" id="camBtn">Вклучи камера</button>
+      <button class="btn ghost" id="torchBtn" hidden style="flex:0 0 auto">Светло</button>
     </div>
     <div class="manual">
       <input id="manual" placeholder="или впиши шифра рачно" autocomplete="off">
@@ -141,21 +142,23 @@ li button{ border:0; background:transparent; color:var(--muted); font-size:22px;
 </div></div>
 
 <script>
-const WAREHOUSE = "109";
-const ADDRESSES = [];
-[["A01",1],["A01",2],["A02",2]].forEach(([r,l])=>{ for(let p=1;p<=6;p++) ADDRESSES.push(`${r}-${l}-${String(p).padStart(2,"0")}`); });
+const ADDRESSES = [], WH = {};
+[["A01",[1,2,3,4]],["A02",[2,3,4]]].forEach(([r,ls])=>ls.forEach(l=>{
+  for(let p=1;p<=6;p++){ const a=`${r}-${l}-${String(p).padStart(2,"0")}`; ADDRESSES.push(a); WH[a]= l<=2 ? "109" : ""; }
+}));
+["C01","C02"].forEach(c=>{ ADDRESSES.push(c); WH[c]="109"; });
 const KEY = "raspored-m109-v1";
 
 let data = [];      // {addr, code, desc, t}
 let idx = 0;
-try { const s = JSON.parse(localStorage.getItem(KEY)||"{}"); data = s.data||[]; idx = Math.min(s.idx||0, ADDRESSES.length-1); } catch(e){}
-function save(){ try{ localStorage.setItem(KEY, JSON.stringify({data, idx})); }catch(e){} }
+try { const s = JSON.parse(localStorage.getItem(KEY)||"{}"); data = s.data||[]; if(s.addr && ADDRESSES.includes(s.addr)) idx = ADDRESSES.indexOf(s.addr); } catch(e){}
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify({data, addr:ADDRESSES[idx]})); }catch(e){} }
 
 const $ = id => document.getElementById(id);
 function cur(){ return ADDRESSES[idx]; }
 
 function render(){
-  $("addr").innerHTML = `${cur()}<small>допри за листа на адреси</small>`;
+  $("addr").innerHTML = `${cur()}<small>скенирај QR на гредата или допри за листа</small>`;
   $("listTitle").textContent = `На адреса ${cur()}`;
   const here = data.filter(d=>d.addr===cur());
   $("list").innerHTML = here.length ? here.map(d=>`
@@ -190,7 +193,16 @@ function beep(ok){
 }
 
 let lastText="", lastTime=0;
+const ADDR_RE = /^(A\d{2}-\d-\d{2}|C\d{2})$/;
 function add(raw){
+  const compact = String(raw).replace(/\s+/g,"").toUpperCase();
+  if(ADDR_RE.test(compact)){
+    if(ADDRESSES.includes(compact)){
+      idx = ADDRESSES.indexOf(compact); lastText=""; save(); render();
+      msg(`Адреса ${compact} – сега скенирај ги кутиите.`,"ok"); beep(true); setTimeout(()=>beep(true),180);
+    } else { msg(`Адресата ${compact} ја нема во листата.`,"warn"); beep(false); }
+    return;
+  }
   const {code, desc} = parse(raw);
   if(!code){ msg("Кодот не може да се прочита. Пробај пак.","warn"); beep(false); return; }
   if(data.some(d=>d.addr===cur() && d.code===code)){ msg(`${code} е веќе на ${cur()}.`,"warn"); beep(false); return; }
@@ -201,19 +213,58 @@ function add(raw){
   else { msg(`${code} додаден на ${cur()}.`,"ok"); beep(true); }
 }
 
-let scanner=null, running=false;
+let running=false, stream=null, detector=null, loopTimer=null, h5=null, torchOn=false;
+function onText(text){
+  const now=Date.now();
+  if(text===lastText && now-lastTime<3000) return;
+  lastText=text; lastTime=now; add(text);
+}
+async function startNative(){
+  detector = new BarcodeDetector({formats:["qr_code"]});
+  stream = await navigator.mediaDevices.getUserMedia({audio:false, video:{facingMode:{ideal:"environment"}, width:{ideal:1920}, height:{ideal:1080}}});
+  const v=document.createElement("video"); v.setAttribute("playsinline",""); v.muted=true; v.srcObject=stream; v.id="vid";
+  $("reader").innerHTML=""; $("reader").appendChild(v); await v.play();
+  const track=stream.getVideoTracks()[0];
+  try{ await track.applyConstraints({advanced:[{focusMode:"continuous"}]}); }catch(e){}
+  try{ const c=track.getCapabilities&&track.getCapabilities(); if(c&&c.torch) $("torchBtn").hidden=false; }catch(e){}
+  const tick=async()=>{
+    if(!running) return;
+    try{ const r=await detector.detect(v); if(r.length) onText(r[0].rawValue); }catch(e){}
+    loopTimer=setTimeout(tick,150);
+  };
+  tick();
+}
+async function startH5(){
+  if(!window.Html5Qrcode) throw new Error("nolib");
+  h5 = h5 || new Html5Qrcode("reader",{experimentalFeatures:{useBarCodeDetectorIfSupported:true}});
+  await h5.start({facingMode:"environment"}, {fps:15, qrbox:(w,h)=>{const m=Math.floor(Math.min(w,h)*0.85); return {width:m,height:m};}}, onText);
+}
 async function toggleCam(){
-  if(!window.Html5Qrcode){ msg("Скенерот не се вчита. Провери интернет и освежи ја страната.","warn"); return; }
-  if(running){ await scanner.stop(); running=false; $("camBtn").textContent="Вклучи камера"; return; }
-  scanner = scanner || new Html5Qrcode("reader");
+  if(running){
+    running=false; clearTimeout(loopTimer);
+    if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; $("reader").innerHTML=""; }
+    if(h5 && h5.isScanning) await h5.stop();
+    $("torchBtn").hidden=true; torchOn=false;
+    $("camBtn").textContent="Вклучи камера"; return;
+  }
+  running=true;
   try{
-    await scanner.start({facingMode:"environment"}, {fps:10, qrbox:{width:230,height:230}}, text=>{
-      const now=Date.now();
-      if(text===lastText && now-lastTime<3000) return;
-      lastText=text; lastTime=now; add(text);
-    });
-    running=true; $("camBtn").textContent="Исклучи камера";
-  }catch(e){ msg("Камерата не се вклучи. Дозволи пристап до камерата во прелистувачот.","warn"); }
+    let native=false;
+    if("BarcodeDetector" in window){ try{ const f=await BarcodeDetector.getSupportedFormats(); native=f.includes("qr_code"); }catch(e){} }
+    if(native) await startNative(); else await startH5();
+    $("camBtn").textContent="Исклучи камера";
+    msg("Камерата е вклучена. Држи го телефонот 10-20 см од QR-кодот.","");
+  }catch(e){
+    running=false;
+    msg(e.message==="nolib" ? "Скенерот не се вчита. Провери интернет и освежи ја страната."
+      : "Камерата не се вклучи. Дозволи пристап до камерата (катанчето до адресата горе → Дозволи).","warn");
+  }
+}
+async function toggleTorch(){
+  if(!stream) return;
+  torchOn=!torchOn;
+  try{ await stream.getVideoTracks()[0].applyConstraints({advanced:[{torch:torchOn}]}); }catch(e){}
+  $("torchBtn").textContent = torchOn ? "Исклучи светло" : "Светло";
 }
 
 function move(d){ idx=(idx+d+ADDRESSES.length)%ADDRESSES.length; lastText=""; save(); render(); msg(""); }
@@ -222,7 +273,7 @@ function exportCsv(){
   if(!data.length){ msg("Нема ништо за симнување.","warn"); return; }
   const rows=[["Магацин","Адреса","Шифра на артикл","Опис"]];
   [...data].sort((a,b)=>ADDRESSES.indexOf(a.addr)-ADDRESSES.indexOf(b.addr)||a.t-b.t)
-    .forEach(d=>rows.push([WAREHOUSE,d.addr,d.code,d.desc]));
+    .forEach(d=>rows.push([WH[d.addr]||"",d.addr,d.code,d.desc]));
   const csv="\uFEFF"+rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(";")).join("\r\n");
   const a=document.createElement("a");
   a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));
@@ -237,6 +288,7 @@ $("addr").onclick=()=>$("grid").classList.toggle("open");
 $("grid").onclick=e=>{ const b=e.target.closest("button"); if(!b) return; idx=+b.dataset.i; $("grid").classList.remove("open"); lastText=""; save(); render(); msg(""); };
 $("list").onclick=e=>{ const b=e.target.closest("button[data-t]"); if(!b) return; data=data.filter(d=>String(d.t)!==b.dataset.t); save(); render(); msg("Избришано.",""); };
 $("camBtn").onclick=toggleCam;
+$("torchBtn").onclick=toggleTorch;
 $("addManual").onclick=()=>{ const v=$("manual").value.trim(); if(v){ add(v.toUpperCase()); $("manual").value=""; } };
 $("manual").onkeydown=e=>{ if(e.key==="Enter") $("addManual").click(); };
 $("export").onclick=exportCsv;
