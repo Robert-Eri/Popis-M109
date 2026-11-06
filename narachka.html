@@ -191,7 +191,10 @@ document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{S.tab=b.datase
   document.querySelectorAll("nav button").forEach(x=>x.setAttribute("aria-selected",x===b));
   ["order","wh","del","rep"].forEach(t=>$("#tab-"+t).hidden=t!==S.tab);render()});
 
-const tStr=t=>t?new Date(t).toLocaleString("mk-MK",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):"";
+const p2=n=>String(n).padStart(2,"0");
+const tStr=t=>{if(!t)return"";const d=new Date(t);return `${p2(d.getDate())}.${p2(d.getMonth()+1)} ${p2(d.getHours())}:${p2(d.getMinutes())}`};
+const dStr=t=>{const d=new Date(t);return `${p2(d.getDate())}.${p2(d.getMonth()+1)}.${d.getFullYear()}`};
+const NAVU={"парчиња":"PCS","метри":"M","кг":"KG","литри":"L"};
 const mins=(a,b)=>a&&b?Math.round((b-a)/60000):null;
 const sortOrders=a=>a.sort((x,y)=>(y.urgent?1:0)-(x.urgent?1:0)||(x.createdAt||0)-(y.createdAt||0));
 
@@ -238,7 +241,7 @@ function setSector(s){
 }
 function sendOrder(){
   if(!S.cart.length||!S.sector) return;
-  const now=Date.now(); const no=new Date(now).toLocaleDateString("mk-MK",{day:"2-digit",month:"2-digit"}).replace(/\D/g,"")+"-"+Math.random().toString(36).slice(2,6).toUpperCase();
+  const now=Date.now(); const dn=new Date(now); const no=p2(dn.getDate())+p2(dn.getMonth()+1)+"-"+Math.random().toString(36).slice(2,6).toUpperCase();
   const doc={no,sector:S.sector,tc:DATA.tc[S.sector]||"",urgent:!!S.urgent,note:S.note.trim(),
     lines:S.cart.map(l=>({code:l.code,name:l.name,unit:l.unit,qty:l.qty,od:l.od,kon:l.kon,nacin:l.nacin,issued:null})),
     status:"new",createdAt:now,by:S.uid,byName:S.name};
@@ -317,6 +320,8 @@ function issue(id){
   box.querySelectorAll("input[data-i]").forEach(inp=>{const v=parseFloat(String(inp.value).replace(/\s/g,"").replace(",","."));
     if(!isFinite(v)||v<0){bad=true;inp.focus();return} const l=lines[+inp.dataset.i]; l.issued=v; l.issuedBy=S.name; l.issuedAt=Date.now()});
   if(bad){toast("Провери ги количините");return}
+  const big=lines.filter(l=>l.issued!=null&&l.qty>0&&(l.issued>l.qty*3||l.issued<l.qty/3)&&l.issued>0);
+  if(big.length&&!confirm("Голема разлика од побараното:\n"+big.map(l=>`${l.code}: побарано ${fmt(l.qty)}, издаваш ${fmt(l.issued)} ${l.unit}`).join("\n")+"\n\nДали е точно?")) return;
   const all=lines.every(l=>l.issued!=null);
   const upd={lines}; if(all){upd.status="issued";upd.issuedAt=Date.now();upd.issuedBy=S.name}
   S.fs.doc("orders/"+id).update(upd).catch(()=>toast("Не се зачува. Пробај пак."));
@@ -343,7 +348,7 @@ function rRep(){
   el.innerHTML=`<div class="card"><label class="field"><span>Датум</span><input type="date" id="rd" value="${S.repDate}"></label>
     <div class="btns"><button class="btn" id="xls">Симни Excel за NAV</button></div>
     <p class="meta" style="margin:10px 0 0">Excel има три листа: Трансфер (по прирачен), Минус (по магацин) и Сите (со времиња). Во NAV се префрла само издаденото.</p></div>
-    <h2>Нарачки на ${new Date(d0).toLocaleDateString("mk-MK")} (${list.length})</h2>
+    <h2>Нарачки на ${dStr(d0)} (${list.length})</h2>
     ${list.length?`<div class="list">${list.map(o=>`<div class="row"><div class="main"><div class="code">${esc(o.sector)} <span class="tag">${esc(o.no)}</span>${o.urgent?'<span class="tag urg">ИТНО</span>':""}</div>
       <div class="meta">нарачано ${tStr(o.createdAt)}${o.issuedAt?` · издадено за ${mins(o.createdAt,o.issuedAt)} мин`:""}${o.deliveredAt?` · испорачано за ${mins(o.createdAt,o.deliveredAt)} мин`:""}</div></div>
       <span class="tag ${o.status==="delivered"?"ok":""}">${st[o.status]||o.status}</span></div>`).join("")}</div>`:'<div class="empty">Нема нарачки за тој ден.</div>'}`;
@@ -352,20 +357,21 @@ function rRep(){
 }
 function exportX(list){
   if(!list.length){toast("Нема нарачки");return}
-  const tr=[["Прирачен","Од магацин","Шифра","Назив","Количина","Мерка","Нарачка","Сектор"]], mi=[["Магацин","ТЦ","Шифра","Назив","Количина","Мерка","Нарачка","Сектор"]];
+  const STN={new:"нова",issued:"издадена",delivered:"испорачана"};
+  const tr=[["Прирачен","Од магацин","Шифра","Назив","Количина","NAV мерка","Мерка","Нарачка","Сектор"]], mi=[["Магацин","ТЦ","Шифра","Назив","Количина","NAV мерка","Мерка","Нарачка","Сектор"]];
   const all=[["Нарачка","Сектор","Итно","Нарачал","Нарачано","Шифра","Назив","Од","Начин","Побарано","Издадено","Мерка","Издал","Издадено во","Испорачано во","Мин. до издавање","Мин. до испорака","Статус"]];
   const T=[],M=[];
   for(const o of list) for(const l of o.lines){
-    all.push([o.no,o.sector,o.urgent?"Да":"",o.byName,tStr(o.createdAt),l.code,l.name,l.od,l.nacin,l.qty,l.issued??"",l.unit,l.issuedBy||"",tStr(l.issuedAt||o.issuedAt),tStr(o.deliveredAt),mins(o.createdAt,l.issuedAt||o.issuedAt)??"",mins(o.createdAt,o.deliveredAt)??"",o.status]);
+    all.push([o.no,o.sector,o.urgent?"Да":"",o.byName,tStr(o.createdAt),l.code,l.name,l.od,l.nacin,l.qty,l.issued??"",l.unit,l.issuedBy||"",tStr(l.issuedAt||o.issuedAt),tStr(o.deliveredAt),mins(o.createdAt,l.issuedAt||o.issuedAt)??"",mins(o.createdAt,o.deliveredAt)??"",STN[o.status]||o.status]);
     if(l.issued==null||l.issued<=0) continue;
-    if(l.nacin==="Минус") M.push([l.od,o.tc,l.code,l.name,l.issued,l.unit,o.no,o.sector]);
-    else T.push([l.kon,l.od,l.code,l.name,l.issued,l.unit,o.no,o.sector]);
+    if(l.nacin==="Минус") M.push([l.od,o.tc,l.code,l.name,l.issued,NAVU[l.unit]||"",l.unit,o.no,o.sector]);
+    else T.push([l.kon,l.od,l.code,l.name,l.issued,NAVU[l.unit]||"",l.unit,o.no,o.sector]);
   }
   T.sort((a,b)=>String(a[0]).localeCompare(String(b[0]))||String(a[1]).localeCompare(String(b[1])));
   M.sort((a,b)=>String(a[0]).localeCompare(String(b[0])));
   const wb=XLSX.utils.book_new();
   const add=(rows,name,w)=>{const s=XLSX.utils.aoa_to_sheet(rows);s["!cols"]=w.map(x=>({wch:x}));XLSX.utils.book_append_sheet(wb,s,name)};
-  add(tr.concat(T),"Трансфер",[10,10,12,36,10,9,11,14]); add(mi.concat(M),"Минус",[9,7,12,36,10,9,11,14]);
+  add(tr.concat(T),"Трансфер",[10,10,12,36,10,9,9,11,14]); add(mi.concat(M),"Минус",[9,7,12,36,10,9,9,11,14]);
   add(all,"Сите",[11,14,6,16,15,12,30,6,9,9,9,8,14,15,15,9,9,10]);
   XLSX.writeFile(wb,"Narachki_"+S.repDate+".xlsx");
 }
