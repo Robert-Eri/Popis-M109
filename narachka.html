@@ -360,7 +360,9 @@ function printIssue(id,whF,fromInputs){
   const o=S.orders.find(x=>x.id===id); if(!o) return;
   const lines=o.lines.map((l,i)=>({...l,i}));
   if(fromInputs){ const box=document.querySelector(`[data-o="${id}"]`);
-    if(box) box.querySelectorAll("input[data-i]").forEach(inp=>{const v=parseFloat(String(inp.value).replace(/\s/g,"").replace(",","."));if(isFinite(v))lines[+inp.dataset.i].pq=v}); }
+    if(box){ box.querySelectorAll("input[data-i]").forEach(inp=>{const v=parseFloat(String(inp.value).replace(/\s/g,"").replace(",","."));if(isFinite(v))lines[+inp.dataset.i].pq=v});
+      box.querySelectorAll("input[data-code]").forEach(inp=>{const l=lines[+inp.dataset.code]; const c=norm(inp.value); if(!c) return; const it=CAT.get(c);
+        l.realCode=it?it.c:inp.value.trim(); if(it){l.od=l.od||it.od}}); } }
   const qOf=l=>l.pq??l.issued??l.qty;
   let whs=[...new Set(lines.map(l=>l.od||"?"))].sort(); if(whF&&whF!=="all") whs=whs.filter(w=>w===whF);
   const d=new Date(o.createdAt||Date.now());
