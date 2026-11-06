@@ -134,6 +134,7 @@ h2{font-size:15px;font-weight:700;margin:18px 0 8px;color:var(--muted)}
 <div class="scanbar" id="scanbar"><div class="wrap">
   <button class="btn" id="scanBtn">Скенирај QR</button>
   <button class="btn ghost" id="manualBtn">Внеси шифра</button>
+  <button class="btn ghost" id="otherBtn">Друго</button>
 </div></div>
 <div class="overlay" id="cam">
   <video id="video" playsinline muted></video><div class="frame"></div>
@@ -220,7 +221,7 @@ function rOrder(){
   if(!S.sector) h+=`<div class="empty"><b>Прво скенирај го кодот на секторот</b>Горе десно на таблата, или избери сектор од листата.</div>`;
   else if(!S.cart.length) h+=`<div class="empty"><b>Скенирај артикл што фали</b>Кодот до артиклот на таблата, или етикетата на кутијата.</div>`;
   else{
-    h+=`<h2>Нарачка за ${esc(S.sector)} (${S.cart.length})</h2><div class="list">${S.cart.map((l,i)=>`<div class="row"><div class="main"><div class="code">${esc(l.code)}</div><div class="desc">${esc(l.name)}</div><div class="meta">Од ${esc(l.od||"?")}${l.nacin==="Минус"?" · минус":""}</div></div>
+    h+=`<h2>Нарачка за ${esc(S.sector)} (${S.cart.length})</h2><div class="list">${S.cart.map((l,i)=>`<div class="row"><div class="main"><div class="code">${esc(l.code)}</div><div class="desc">${esc(l.name)}</div><div class="meta">${l.other?'<span class="tag urg" style="margin-left:0">ДРУГО</span> ':""}Од ${esc(l.od||"?")}${l.nacin==="Минус"?" · минус":""}</div></div>
       <div class="qty">${fmt(l.qty)} <span class="unit">${esc(l.unit)}</span></div><button class="del" data-i="${i}">Тргни</button></div>`).join("")}</div>
       <div class="card" style="margin-top:12px">
         <label class="toggle"><input type="checkbox" id="urg" ${S.urgent?"checked":""}> Итно</label>
@@ -244,7 +245,7 @@ function sendOrder(){
   if(!S.cart.length||!S.sector) return;
   const now=Date.now(); const dn=new Date(now); const no=p2(dn.getDate())+p2(dn.getMonth()+1)+"-"+Math.random().toString(36).slice(2,6).toUpperCase();
   const doc={no,sector:S.sector,tc:DATA.tc[S.sector]||"",urgent:!!S.urgent,note:S.note.trim(),
-    lines:S.cart.map(l=>({code:l.code,name:l.name,unit:l.unit,qty:l.qty,od:l.od,kon:l.kon,nacin:l.nacin,issued:null})),
+    lines:S.cart.map(l=>({code:l.code,name:l.name,unit:l.unit,qty:l.qty,od:l.od,kon:l.kon,nacin:l.nacin,issued:null,other:!!l.other})),
     status:"new",createdAt:now,by:S.uid,byName:S.name};
   S.fs.collection("orders").add(doc).catch(()=>toast("Нарачката не е испратена. Пробај пак."));
   S.cart=[];S.urgent=false;S.note="";saveCart();toast("Нарачката "+no+" е испратена");render();
@@ -288,7 +289,28 @@ function manualEntry(){
   const go=()=>{const v=mi.value.trim();if(!v)return;closeSheet();setTimeout(()=>onScan(v),60)};
   $("#manOk").onclick=go;mi.onkeydown=e=>{if(e.key==="Enter")go()};$("#manX").onclick=closeSheet;
 }
-$("#scanBtn").onclick=()=>startScan(); $("#manualBtn").onclick=manualEntry;
+$("#scanBtn").onclick=()=>startScan(); $("#manualBtn").onclick=manualEntry; $("#otherBtn").onclick=otherEntry;
+const WHS=["101","102","103","104","105","106","107","108","109","110"];
+function otherEntry(){
+  if(!S.sector){toast("Прво скенирај или избери сектор");return}
+  stopScan();
+  openSheet(`<p class="scode" style="font-size:22px">Друго (артикл без шифра)</p>
+    <label class="field"><span>Што треба? Опиши што подетално (име, димензија, боја…)</span><textarea id="oDesc" rows="3"></textarea></label>
+    <div class="qrow"><input class="bigqty" id="oQty" type="text" inputmode="decimal" autocomplete="off" placeholder="0" aria-label="Количина">
+      <div class="ubox"><select id="oUnit" aria-label="Мерка"><option value="">мерка…</option>${UNITS.map(u=>`<option>${u}</option>`).join("")}</select></div></div>
+    <label class="field"><span>Од магацин (ако знаеш)</span><select id="oWh"><option value="">не знам</option>${WHS.map(w=>`<option>${w}</option>`).join("")}</select></label>
+    <div class="btns"><button class="btn ghost" id="oX">Откажи</button><button class="btn" id="oOk">Додај</button></div>`);
+  setTimeout(()=>$("#oDesc").focus(),60);
+  $("#oX").onclick=closeSheet;
+  $("#oOk").onclick=()=>{
+    const desc=$("#oDesc").value.trim(), v=parseFloat(String($("#oQty").value).replace(/\s/g,"").replace(",",".")), unit=$("#oUnit").value;
+    if(!desc){toast("Опиши што треба");$("#oDesc").focus();return}
+    if(!isFinite(v)||v<=0){toast("Внеси количина");$("#oQty").focus();return}
+    if(!unit){toast("Избери мерка");return}
+    S.cart.push({code:"ДРУГО",name:desc,unit,qty:v,od:$("#oWh").value,kon:"",nacin:"",other:true});
+    saveCart();closeSheet();toast("Додадено: "+desc.slice(0,30));render();
+  };
+}
 
 /* ---- МАГАЦИН ---- */
 function rWh(){
@@ -304,7 +326,8 @@ function rWh(){
     h+=`<div class="order${o.urgent?" urgent":""}" data-o="${o.id}"><div class="ohead"><b>${esc(o.sector)}</b>${o.urgent?'<span class="tag urg">ИТНО</span>':""}<span class="tag">${esc(o.no)}</span>
       <span class="meta">${esc(o.byName||"")}, ${tStr(o.createdAt)}${o.pending?" · чека интернет":""}</span></div>
       ${o.note?`<div class="oline" style="display:block;background:var(--warn-soft)">${esc(o.note)}</div>`:""}
-      ${lines.map(l=>`<div class="oline"><div><div class="code">${esc(l.code)} <span class="tag">${esc(l.od||"?")}</span>${l.nacin==="Минус"?'<span class="tag">минус</span>':""}</div><div class="desc">${esc(l.name)}</div>
+      ${lines.map(l=>`<div class="oline"><div><div class="code">${l.other?'<span class="tag urg" style="margin-left:0">ДРУГО</span>':esc(l.code)} <span class="tag">${esc(l.od||"?")}</span>${l.nacin==="Минус"?'<span class="tag">минус</span>':""}</div><div class="desc">${esc(l.name)}</div>
+        ${l.other?`<input type="text" data-code="${l.i}" placeholder="шифра (ако ја најдеш)" value="${esc(l.realCode||"")}" style="width:100%;text-align:left;font-size:15px;font-weight:600;margin:4px 0">`:""}
         <div class="meta">Побарано: <b>${fmt(l.qty)} ${esc(l.unit)}</b></div></div>
         <div class="iss"><input type="text" inputmode="decimal" data-i="${l.i}" value="${l.issued!=null?l.issued:l.qty}" aria-label="Издадено"><span class="unit">${esc(l.unit)}</span></div></div>`).join("")}
       <div class="ofoot"><span class="meta" style="flex:1">Смени ја количината ако издаваш различно. 0 = нема.</span><button class="btn ghost" data-print="${o.id}">Печати издатница</button><button class="btn okb" data-issue="${o.id}">Издадено</button></div></div>`;
@@ -322,6 +345,9 @@ function issue(id){
   box.querySelectorAll("input[data-i]").forEach(inp=>{const v=parseFloat(String(inp.value).replace(/\s/g,"").replace(",","."));
     if(!isFinite(v)||v<0){bad=true;inp.focus();return} const l=lines[+inp.dataset.i]; l.issued=v; l.issuedBy=S.name; l.issuedAt=Date.now()});
   if(bad){toast("Провери ги количините");return}
+  box.querySelectorAll("input[data-code]").forEach(inp=>{const l=lines[+inp.dataset.code]; const c=norm(inp.value);
+    if(!c){return} const it=CAT.get(c);
+    l.realCode=it?it.c:inp.value.trim(); if(it){l.od=l.od||it.od; l.nacin=it.nacin; l.kon=it.kon}});
   const big=lines.filter(l=>l.issued!=null&&l.qty>0&&(l.issued>l.qty*3||l.issued<l.qty/3)&&l.issued>0);
   if(big.length&&!confirm("Голема разлика од побараното:\n"+big.map(l=>`${l.code}: побарано ${fmt(l.qty)}, издаваш ${fmt(l.issued)} ${l.unit}`).join("\n")+"\n\nДали е точно?")) return;
   const all=lines.every(l=>l.issued!=null);
@@ -339,7 +365,7 @@ function printIssue(id,whF,fromInputs){
   let whs=[...new Set(lines.map(l=>l.od||"?"))].sort(); if(whF&&whF!=="all") whs=whs.filter(w=>w===whF);
   const d=new Date(o.createdAt||Date.now());
   const page=w=>{const ls=lines.filter(l=>(l.od||"?")===w&&qOf(l)>0);
-    const rows=ls.map((l,k)=>`<tr><td class="c">${k+1}</td><td>${esc(l.name)}</td><td class="c">${esc(NAVU[l.unit]||l.unit)}</td><td class="n">${fmt(qOf(l))}</td><td>${esc(l.code)}</td><td>${esc(ADR[l.code]||"")}</td></tr>`).join("");
+    const rows=ls.map((l,k)=>`<tr><td class="c">${k+1}</td><td>${esc(l.name)}</td><td class="c">${esc(NAVU[l.unit]||l.unit)}</td><td class="n">${fmt(qOf(l))}</td><td>${esc(l.other?(l.realCode||"ДРУГО"):l.code)}</td><td>${esc(ADR[l.other?(l.realCode||""):l.code]||"")}</td></tr>`).join("");
     const empty=Math.max(0,8-ls.length); const pad=Array.from({length:empty},()=>'<tr><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td></tr>').join("");
     return `<section class="pg"><div class="hd"><div><b>ЕРИ ЦОРПОРАТИОН</b><br>Битола</div><div>Дата: <b>${dStr(o.createdAt)}</b><br>Смена: ________</div></div>
       <h1>ИЗДАТНИЦА Бр. M/${esc(w)}/${esc(o.no)}${o.urgent?' <span class="u">ИТНО</span>':""}</h1>
@@ -367,7 +393,7 @@ function rDel(){
   const list=sortOrders(S.orders.filter(o=>o.status==="issued"));
   if(!list.length){el.innerHTML='<div class="empty"><b>Нема ништо за испорака</b>Тука се нарачките што магацинот ги издал, а уште не се однесени.</div>';return}
   el.innerHTML=list.map(o=>`<div class="order${o.urgent?" urgent":""}"><div class="ohead"><b>${esc(o.sector)}</b>${o.urgent?'<span class="tag urg">ИТНО</span>':""}<span class="tag">${esc(o.no)}</span><span class="meta">издадено ${tStr(o.issuedAt)}, ${esc(o.issuedBy||"")}</span></div>
-    ${o.lines.map(l=>`<div class="oline"><div><div class="code">${esc(l.code)}</div><div class="desc">${esc(l.name)}</div></div><div class="qty">${fmt(l.issued??0)} <span class="unit">${esc(l.unit)}</span>${l.issued!==l.qty?`<div class="meta">побарано ${fmt(l.qty)}</div>`:""}</div></div>`).join("")}
+    ${o.lines.map(l=>`<div class="oline"><div><div class="code">${esc(l.other?(l.realCode||"ДРУГО"):l.code)}</div><div class="desc">${esc(l.name)}</div></div><div class="qty">${fmt(l.issued??0)} <span class="unit">${esc(l.unit)}</span>${l.issued!==l.qty?`<div class="meta">побарано ${fmt(l.qty)}</div>`:""}</div></div>`).join("")}
     <div class="ofoot"><button class="btn ghost" data-print="${o.id}">Печати издатница</button><button class="btn okb" data-dl="${o.id}" style="flex:1">Испорачано на линија</button></div></div>`).join("");
   el.querySelectorAll("[data-print]").forEach(b=>b.onclick=()=>printIssue(b.dataset.print,"all",false));
   el.querySelectorAll("[data-dl]").forEach(b=>b.onclick=()=>{S.fs.doc("orders/"+b.dataset.dl).update({status:"delivered",deliveredAt:Date.now(),deliveredBy:S.name}).catch(()=>toast("Не се зачува."));toast("Испорачано")});
@@ -381,7 +407,7 @@ function rRep(){
   const st={new:"нова",issued:"издадена",delivered:"испорачана"};
   el.innerHTML=`<div class="card"><label class="field"><span>Датум</span><input type="date" id="rd" value="${S.repDate}"></label>
     <div class="btns"><button class="btn" id="xls">Симни Excel за NAV</button></div>
-    <p class="meta" style="margin:10px 0 0">Excel има три листа: Трансфер (по прирачен), Минус (по магацин) и Сите (со времиња). Во NAV се префрла само издаденото.</p></div>
+    <p class="meta" style="margin:10px 0 0">Листови: Трансфер (по прирачен), Минус (по магацин), Без шифра („Друго“ за рачно во NAV) и Сите (со времиња). Во NAV се префрла само издаденото.</p></div>
     <h2>Нарачки на ${dStr(d0)} (${list.length})</h2>
     ${list.length?`<div class="list">${list.map(o=>`<div class="row"><div class="main"><div class="code">${esc(o.sector)} <span class="tag">${esc(o.no)}</span>${o.urgent?'<span class="tag urg">ИТНО</span>':""}</div>
       <div class="meta">нарачано ${tStr(o.createdAt)}${o.issuedAt?` · издадено за ${mins(o.createdAt,o.issuedAt)} мин`:""}${o.deliveredAt?` · испорачано за ${mins(o.createdAt,o.deliveredAt)} мин`:""}</div></div>
@@ -394,10 +420,12 @@ function exportX(list){
   const STN={new:"нова",issued:"издадена",delivered:"испорачана"};
   const tr=[["Прирачен","Од магацин","Шифра","Назив","Количина","NAV мерка","Мерка","Нарачка","Сектор"]], mi=[["Магацин","ТЦ","Шифра","Назив","Количина","NAV мерка","Мерка","Нарачка","Сектор"]];
   const all=[["Нарачка","Сектор","Итно","Нарачал","Нарачано","Шифра","Назив","Од","Начин","Побарано","Издадено","Мерка","Издал","Издадено во","Испорачано во","Мин. до издавање","Мин. до испорака","Статус"]];
-  const T=[],M=[];
-  for(const o of list) for(const l of o.lines){
+  const T=[],M=[],X=[["Нарачка","Сектор","Опис","Количина издадена","Мерка","Од магацин","Внесена шифра"]];
+  for(const o of list) for(const l0 of o.lines){
+    const l=l0.other?{...l0,code:l0.realCode||"ДРУГО"}:l0;
     all.push([o.no,o.sector,o.urgent?"Да":"",o.byName,tStr(o.createdAt),l.code,l.name,l.od,l.nacin,l.qty,l.issued??"",l.unit,l.issuedBy||"",tStr(l.issuedAt||o.issuedAt),tStr(o.deliveredAt),mins(o.createdAt,l.issuedAt||o.issuedAt)??"",mins(o.createdAt,o.deliveredAt)??"",STN[o.status]||o.status]);
     if(l.issued==null||l.issued<=0) continue;
+    if(l0.other&&!(l0.realCode&&CAT.has(norm(l0.realCode)))){X.push([o.no,o.sector,l.name,l.issued,l.unit,l.od||"",l0.realCode||""]);continue}
     if(l.nacin==="Минус") M.push([l.od,o.tc,l.code,l.name,l.issued,NAVU[l.unit]||"",l.unit,o.no,o.sector]);
     else T.push([l.kon,l.od,l.code,l.name,l.issued,NAVU[l.unit]||"",l.unit,o.no,o.sector]);
   }
@@ -406,6 +434,7 @@ function exportX(list){
   const wb=XLSX.utils.book_new();
   const add=(rows,name,w)=>{const s=XLSX.utils.aoa_to_sheet(rows);s["!cols"]=w.map(x=>({wch:x}));XLSX.utils.book_append_sheet(wb,s,name)};
   add(tr.concat(T),"Трансфер",[10,10,12,36,10,9,9,11,14]); add(mi.concat(M),"Минус",[9,7,12,36,10,9,9,11,14]);
+  if(X.length>1) add(X,"Без шифра",[11,14,40,10,9,10,14]);
   add(all,"Сите",[11,14,6,16,15,12,30,6,9,9,9,8,14,15,15,9,9,10]);
   XLSX.writeFile(wb,"Narachki_"+S.repDate+".xlsx");
 }
