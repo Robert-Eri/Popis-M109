@@ -11,6 +11,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 const FIREBASE_CONFIG = {
@@ -313,6 +314,7 @@ function otherEntry(){
 }
 
 /* ---- МАГАЦИН ---- */
+function knownNames(){const s=new Set();for(const o of S.orders){[o.issuedBy,o.deliveredBy].forEach(n=>n&&s.add(n));(o.lines||[]).forEach(l=>l.issuedBy&&s.add(l.issuedBy))}return [...s].sort()}
 function rWh(){
   const el=$("#tab-wh");
   if(!S.ready){el.innerHTML='<div class="empty">Се вчитува…</div>';return}
@@ -330,8 +332,11 @@ function rWh(){
         ${l.other?`<input type="text" data-code="${l.i}" placeholder="шифра (ако ја најдеш)" value="${esc(l.realCode||"")}" style="width:100%;text-align:left;font-size:15px;font-weight:600;margin:4px 0">`:""}
         <div class="meta">Побарано: <b>${fmt(l.qty)} ${esc(l.unit)}</b></div></div>
         <div class="iss"><input type="text" inputmode="decimal" data-i="${l.i}" value="${l.issued!=null?l.issued:l.qty}" aria-label="Издадено"><span class="unit">${esc(l.unit)}</span></div></div>`).join("")}
-      <div class="ofoot"><span class="meta" style="flex:1">Смени ја количината ако издаваш различно. 0 = нема.</span><button class="btn ghost" data-print="${o.id}">Печати издатница</button><button class="btn okb" data-issue="${o.id}">Издадено</button></div></div>`;
+      <div class="ofoot" style="flex-direction:column;align-items:stretch"><span class="meta">Смени ја количината ако издаваш различно. 0 = нема.</span>
+        <label class="field" style="margin:0"><span>Спремил</span><input data-prep="${o.id}" list="names" value="${esc(store.get("nar-prep")||"")}" placeholder="име на магационерот"></label>
+        <div class="btns"><button class="btn ghost" data-print="${o.id}" style="flex:1">Печати издатница</button><button class="btn okb" data-issue="${o.id}" style="flex:1">Издадено</button></div></div></div>`;
   }
+  h+=`<datalist id="names">${knownNames().map(n=>`<option value="${esc(n)}">`).join("")}</datalist>`;
   el.innerHTML=h;
   el.querySelectorAll("[data-w]").forEach(b=>b.onclick=()=>{S.whFilter=b.dataset.w;store.set("nar-wh",S.whFilter);render()});
   el.querySelectorAll("[data-issue]").forEach(b=>b.onclick=()=>issue(b.dataset.issue));
@@ -345,13 +350,18 @@ function issue(id){
   box.querySelectorAll("input[data-i]").forEach(inp=>{const v=parseFloat(String(inp.value).replace(/\s/g,"").replace(",","."));
     if(!isFinite(v)||v<0){bad=true;inp.focus();return} const l=lines[+inp.dataset.i]; l.issued=v; l.issuedBy=S.name; l.issuedAt=Date.now()});
   if(bad){toast("Провери ги количините");return}
+  const pin=box.querySelector("input[data-prep]"); const prep=(pin&&pin.value.trim())||"";
+  if(!prep){toast("Внеси кој ја спремил");pin&&pin.focus();return}
+  store.set("nar-prep",prep);
+  lines.forEach(l=>{if(l.issuedBy===S.name&&l.issuedAt&&Date.now()-l.issuedAt<5000) l.issuedBy=prep});
   box.querySelectorAll("input[data-code]").forEach(inp=>{const l=lines[+inp.dataset.code]; const c=norm(inp.value);
     if(!c){return} const it=CAT.get(c);
     l.realCode=it?it.c:inp.value.trim(); if(it){l.od=l.od||it.od; l.nacin=it.nacin; l.kon=it.kon}});
   const big=lines.filter(l=>l.issued!=null&&l.qty>0&&(l.issued>l.qty*3||l.issued<l.qty/3)&&l.issued>0);
   if(big.length&&!confirm("Голема разлика од побараното:\n"+big.map(l=>`${l.code}: побарано ${fmt(l.qty)}, издаваш ${fmt(l.issued)} ${l.unit}`).join("\n")+"\n\nДали е точно?")) return;
   const all=lines.every(l=>l.issued!=null);
-  const upd={lines}; if(all){upd.status="issued";upd.issuedAt=Date.now();upd.issuedBy=S.name}
+  lines.forEach(l=>{if(l.issuedAt&&Date.now()-l.issuedAt<5000) l.issuedBy=prep});
+  const upd={lines}; if(all){upd.status="issued";upd.issuedAt=Date.now();upd.issuedBy=prep}
   S.fs.doc("orders/"+id).update(upd).catch(()=>toast("Не се зачува. Пробај пак."));
   toast(all?"Нарачката е издадена":"Зачувано за овој магацин");
 }
@@ -365,11 +375,12 @@ function printIssue(id,whF,fromInputs){
         l.realCode=it?it.c:inp.value.trim(); if(it){l.od=l.od||it.od}}); } }
   const qOf=l=>l.pq??l.issued??l.qty;
   let whs=[...new Set(lines.map(l=>l.od||"?"))].sort(); if(whF&&whF!=="all") whs=whs.filter(w=>w===whF);
-  const d=new Date(o.createdAt||Date.now());
+  const link=location.origin+location.pathname+"#p="+o.id;
+  let qrImg=""; try{const q=qrcode(0,"M");q.addData(link);q.make();qrImg=q.createDataURL(3,2)}catch(e){}
   const page=w=>{const ls=lines.filter(l=>(l.od||"?")===w&&qOf(l)>0);
     const rows=ls.map((l,k)=>`<tr><td class="c">${k+1}</td><td>${esc(l.name)}</td><td class="c">${esc(NAVU[l.unit]||l.unit)}</td><td class="n">${fmt(qOf(l))}</td><td>${esc(l.other?(l.realCode||"ДРУГО"):l.code)}</td><td>${esc(ADR[l.other?(l.realCode||""):l.code]||"")}</td></tr>`).join("");
     const empty=Math.max(0,8-ls.length); const pad=Array.from({length:empty},()=>'<tr><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td></tr>').join("");
-    return `<section class="pg"><div class="hd"><div><b>ЕРИ ЦОРПОРАТИОН</b><br>Битола</div><div>Дата: <b>${dStr(o.createdAt)}</b><br>Смена: ________</div></div>
+    return `<section class="pg"><div class="hd"><div><b>ЕРИ ЦОРПОРАТИОН</b><br>Битола</div><div style="display:flex;gap:10px;align-items:flex-start"><div>Дата: <b>${dStr(o.createdAt)}</b><br>Смена: ________</div>${qrImg?`<div class="qr"><img src="${qrImg}" alt=""><div>Скенирај на линија</div></div>`:""}</div></div>
       <h1>ИЗДАТНИЦА Бр. M/${esc(w)}/${esc(o.no)}${o.urgent?' <span class="u">ИТНО</span>':""}</h1>
       <div class="fr"><b>Од: Магацин ${esc(w)} → ${esc(o.sector)}</b>${o.tc?` (${esc(o.tc)})`:""}</div>
       <div class="sm">Врз основа на требувањето бр. ${esc(o.no)} (${esc(o.byName||"")}, ${tStr(o.createdAt)}) е издаден следниот материјал:${o.note?`<br>Забелешка: ${esc(o.note)}`:""}</div>
@@ -388,7 +399,8 @@ function printIssue(id,whF,fromInputs){
     th{font-size:8.5pt;background:#eee;text-align:center}
     td.c{text-align:center}td.n{text-align:right;white-space:nowrap}
     col.c1{width:10mm}col.c2{width:auto}col.c3{width:15mm}col.c4{width:20mm}col.c5{width:24mm}col.c6{width:21mm}
-    .sg{display:flex;justify-content:space-between;margin-top:14px;font-size:9.5pt}</style></head>
+    .sg{display:flex;justify-content:space-between;margin-top:14px;font-size:9.5pt}
+    .qr{text-align:center;font-size:7pt}.qr img{width:22mm;height:22mm;display:block}</style></head>
     <body>${whs.map(page).join("")}<script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script></body></html>`;
   const win=window.open("","_blank"); if(!win){toast("Дозволи pop-up за оваа страница");return}
   win.document.open();win.document.write(html);win.document.close();
@@ -536,6 +548,30 @@ $("#photoIn").onchange=e=>{const f=e.target.files[0];e.target.value="";if(!f)ret
 
 
 
+function checkHash(){
+  const m=location.hash.match(/^#p=([A-Za-z0-9]+)$/); if(!m) return;
+  const id=m[1];
+  const show=()=>{
+    const o=S.orders.find(x=>x.id===id);
+    if(!S.ready){setTimeout(show,400);return}
+    if(!o){openSheet(`<p class="scode" style="font-size:22px">Нарачката не е најдена</p><p class="sdesc">Можеби е постара од 14 дена.</p><div class="btns"><button class="btn" id="hX">Затвори</button></div>`);$("#hX").onclick=()=>{closeSheet();history.replaceState(null,"",location.pathname)};return}
+    const done=o.status==="delivered";
+    openSheet(`<p class="scode" style="font-size:22px">Испорака ${esc(o.no)}</p><p class="sdesc">${esc(o.sector)} · ${o.lines.length} артикли${o.issuedBy?` · спремил ${esc(o.issuedBy)}`:""}</p>
+      ${done?`<div class="unknown" style="background:var(--ok-soft);border-color:var(--ok)">Веќе е испорачана: ${tStr(o.deliveredAt)}, ${esc(o.deliveredBy||"")}.</div>`:""}
+      ${o.status==="new"?`<div class="unknown">Магацинот уште не кликнал „Издадено“. Потврди ја испораката откако ќе биде издадена.</div>`:""}
+      ${!done&&o.status==="issued"?`<label class="field"><span>Кој испорачува / прима</span><input id="hN" list="names2" value="${esc(S.name)}"><datalist id="names2">${knownNames().map(n=>`<option value="${esc(n)}">`).join("")}</datalist></label>
+      <div class="btns"><button class="btn ghost" id="hX">Затвори</button><button class="btn okb" id="hOk">Потврди испорака</button></div>`:`<div class="btns"><button class="btn" id="hX">Затвори</button></div>`}`);
+    const clear=()=>{closeSheet();history.replaceState(null,"",location.pathname)};
+    $("#hX").onclick=clear;
+    const ok=$("#hOk"); if(ok) ok.onclick=()=>{const n=$("#hN").value.trim(); if(!n){toast("Внеси име");return}
+      if(!S.name){S.name=n;store.set("nar-name",n);$("#nameDlg").classList.remove("open")}
+      S.fs.doc("orders/"+id).update({status:"delivered",deliveredAt:Date.now(),deliveredBy:n}).catch(()=>toast("Не се зачува."));
+      toast("Испораката е потврдена");clear()};
+  };
+  show();
+}
+window.addEventListener("hashchange",checkHash);
+checkHash();
 render();
 })();
 </script>
