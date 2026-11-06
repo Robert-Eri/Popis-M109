@@ -368,22 +368,27 @@ function printIssue(id,whF,fromInputs){
   const d=new Date(o.createdAt||Date.now());
   const page=w=>{const ls=lines.filter(l=>(l.od||"?")===w&&qOf(l)>0);
     const rows=ls.map((l,k)=>`<tr><td class="c">${k+1}</td><td>${esc(l.name)}</td><td class="c">${esc(NAVU[l.unit]||l.unit)}</td><td class="n">${fmt(qOf(l))}</td><td>${esc(l.other?(l.realCode||"ДРУГО"):l.code)}</td><td>${esc(ADR[l.other?(l.realCode||""):l.code]||"")}</td></tr>`).join("");
-    const empty=Math.max(0,8-ls.length); const pad=Array.from({length:empty},()=>'<tr><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td></tr>').join("");
+    const empty=Math.max(0,5-ls.length); const pad=Array.from({length:empty},()=>'<tr><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td></tr>').join("");
     return `<section class="pg"><div class="hd"><div><b>ЕРИ ЦОРПОРАТИОН</b><br>Битола</div><div>Дата: <b>${dStr(o.createdAt)}</b><br>Смена: ________</div></div>
       <h1>ИЗДАТНИЦА Бр. M/${esc(w)}/${esc(o.no)}${o.urgent?' <span class="u">ИТНО</span>':""}</h1>
       <div class="fr"><b>Од: Магацин ${esc(w)} → ${esc(o.sector)}</b>${o.tc?` (${esc(o.tc)})`:""}</div>
       <div class="sm">Врз основа на требувањето бр. ${esc(o.no)} (${esc(o.byName||"")}, ${tStr(o.createdAt)}) е издаден следниот материјал:${o.note?`<br>Забелешка: ${esc(o.note)}`:""}</div>
-      <table><thead><tr><th>Р. бр.</th><th>Назив на материјалите</th><th>Ед. мерка</th><th>Количина</th><th>Шифра</th><th>Адреса</th></tr></thead><tbody>${rows}${pad}</tbody></table>
+      <table><colgroup><col class="c1"><col class="c2"><col class="c3"><col class="c4"><col class="c5"><col class="c6"></colgroup><thead><tr><th>Р. бр.</th><th>Назив на материјалите</th><th>Ед. мерка</th><th>Количина</th><th>Шифра</th><th>Адреса</th></tr></thead><tbody>${rows}${pad}</tbody></table>
       <div class="sg"><span>Издал: ______________</span><span>Одобрил: ______________</span><span>Примил: ______________</span></div></section>`};
   const html=`<!doctype html><html lang="mk"><head><meta charset="utf-8"><title>Издатница ${esc(o.no)}</title><style>
-    @page{size:A4 portrait;margin:12mm}body{font-family:Arial,sans-serif;font-size:10.5pt;color:#000;margin:0}
-    .pg{page-break-after:always;padding-bottom:6mm}.pg:last-child{page-break-after:auto}
-    .hd{display:flex;justify-content:space-between;font-size:10pt}h1{font-size:15pt;margin:8px 0 4px 40px}.u{border:2px solid #000;padding:0 6px;font-size:11pt}
-    .fr{font-size:12pt;margin-bottom:3px}.sm{font-size:9.5pt;margin-bottom:6px}
-    table{width:100%;border-collapse:collapse}th,td{border:1px solid #000;padding:5px 5px;font-size:10pt}th{font-size:9pt;background:#eee}
+    @page{size:A4 portrait;margin:10mm}
+    html,body{margin:0}body{font-family:Arial,sans-serif;font-size:10pt;color:#000}
+    .pg{width:180mm;margin:0 auto;page-break-inside:avoid;padding-bottom:5mm;margin-bottom:6mm;border-bottom:1px dashed #999}
+    .pg:last-child{border-bottom:0}
+    .hd{display:flex;justify-content:space-between;font-size:9.5pt}
+    h1{font-size:14pt;margin:6px 0 3px 30px}.u{border:2px solid #000;padding:0 5px;font-size:10pt}
+    .fr{font-size:11pt;margin-bottom:2px}.sm{font-size:9pt;margin-bottom:5px}
+    table{width:180mm;border-collapse:collapse;table-layout:fixed}
+    th,td{border:1px solid #000;padding:3px 4px;font-size:9.5pt;overflow-wrap:anywhere;vertical-align:top}
+    th{font-size:8.5pt;background:#eee;text-align:center}
     td.c{text-align:center}td.n{text-align:right;white-space:nowrap}
-    th:nth-child(1){width:9mm}th:nth-child(3){width:15mm}th:nth-child(4){width:20mm}th:nth-child(5){width:24mm}th:nth-child(6){width:20mm}
-    .sg{display:flex;justify-content:space-between;margin-top:18px;font-size:10pt}</style></head>
+    col.c1{width:10mm}col.c2{width:auto}col.c3{width:15mm}col.c4{width:20mm}col.c5{width:24mm}col.c6{width:21mm}
+    .sg{display:flex;justify-content:space-between;margin-top:14px;font-size:9.5pt}</style></head>
     <body>${whs.map(page).join("")}<script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script></body></html>`;
   const win=window.open("","_blank"); if(!win){toast("Дозволи pop-up за оваа страница");return}
   win.document.open();win.document.write(html);win.document.close();
