@@ -117,7 +117,7 @@ h2{font-size:15px;font-weight:700;margin:18px 0 8px;color:var(--muted)}
 </div></div>
 
 <header><div class="wrap">
-  <div class="top"><h1>Нарачки</h1><span style="font-size:11px;color:var(--muted)">в. 16.11</span><button class="who" id="who"></button></div>
+  <div class="top"><h1>Нарачки</h1><span style="font-size:11px;color:var(--muted)">в. 16.11b</span><button class="who" id="who"></button></div>
   <nav role="tablist">
     <button role="tab" data-tab="order" aria-selected="true">Нарачај</button>
     <button role="tab" data-tab="wh" aria-selected="false">Магацин <span id="bNew"></span></button>
@@ -410,9 +410,13 @@ function printIssue(id,whF,fromInputs){
     col.c1{width:9mm}col.c2{width:auto}col.c3{width:14mm}col.c4{width:18mm}col.c5{width:18mm}col.c6{width:23mm}col.c7{width:19mm}td.iss{font-weight:bold}
     .sg{display:flex;justify-content:space-between;margin-top:14px;font-size:9.5pt}
     .qr{text-align:center;font-size:7pt}.qr svg{width:24mm;height:24mm;display:block}</style></head>
-    <body>${whs.map(page).join("")}<script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script></body></html>`;
-  const win=window.open("","_blank"); if(!win){toast("Дозволи pop-up за оваа страница");return}
-  win.document.open();win.document.write(html);win.document.close();
+    <body>${whs.map(page).join("")}</body></html>`;
+  let fr=document.getElementById("printFrame"); if(fr) fr.remove();
+  fr=document.createElement("iframe"); fr.id="printFrame";
+  fr.style.cssText="position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden";
+  document.body.appendChild(fr);
+  const d=fr.contentWindow.document; d.open(); d.write(html); d.close();
+  setTimeout(()=>{try{fr.contentWindow.focus();fr.contentWindow.print()}catch(e){toast("Печатењето не успеа. Пробај пак.")}},400);
 }
 
 /* ---- ИСПОРАКА ---- */
