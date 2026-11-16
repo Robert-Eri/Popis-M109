@@ -117,7 +117,7 @@ h2{font-size:15px;font-weight:700;margin:18px 0 8px;color:var(--muted)}
 </div></div>
 
 <header><div class="wrap">
-  <div class="top"><h1>Нарачки</h1><button class="who" id="who"></button></div>
+  <div class="top"><h1>Нарачки</h1><span style="font-size:11px;color:var(--muted)">в. 16.11</span><button class="who" id="who"></button></div>
   <nav role="tablist">
     <button role="tab" data-tab="order" aria-selected="true">Нарачај</button>
     <button role="tab" data-tab="wh" aria-selected="false">Магацин <span id="bNew"></span></button>
@@ -325,7 +325,7 @@ function rWh(){
   if(!list.length) h+=`<div class="empty"><b>Нема нови нарачки</b>Новите нарачки се појавуваат тука сами.</div>`;
   for(const o of list){
     const lines=o.lines.map((l,i)=>({...l,i})).filter(l=>f==="all"||(l.od||"?")===f);
-    h+=`<div class="order${o.urgent?" urgent":""}" data-o="${o.id}"><div class="ohead"><b>${esc(o.sector)}</b>${o.urgent?'<span class="tag urg">ИТНО</span>':""}<span class="tag">${esc(o.no)}</span>
+    h+=`<div class="order${o.urgent?" urgent":""}" data-o="${o.id}"><div class="ohead"><b>${esc(o.sector)}</b>${o.urgent?'<span class="tag urg">ИТНО</span>':""}<span class="tag">${esc(o.no)}</span>${o.printedAt?`<span class="tag ok">Испечатена ${tStr(o.printedAt).slice(6)} – ${esc(o.printedBy||"")}</span>`:""}
       <span class="meta">${esc(o.byName||"")}, ${tStr(o.createdAt)}${o.pending?" · чека интернет":""}</span></div>
       ${o.note?`<div class="oline" style="display:block;background:var(--warn-soft)">${esc(o.note)}</div>`:""}
       ${lines.map(l=>`<div class="oline"><div><div class="code">${l.other?'<span class="tag urg" style="margin-left:0">ДРУГО</span>':esc(l.code)} <span class="tag">${esc(l.od||"?")}</span>${l.nacin==="Минус"?'<span class="tag">минус</span>':""}</div><div class="desc">${esc(l.name)}</div>
@@ -340,7 +340,13 @@ function rWh(){
   el.innerHTML=h;
   el.querySelectorAll("[data-w]").forEach(b=>b.onclick=()=>{S.whFilter=b.dataset.w;store.set("nar-wh",S.whFilter);render()});
   el.querySelectorAll("[data-issue]").forEach(b=>b.onclick=()=>issue(b.dataset.issue));
-  el.querySelectorAll("[data-print]").forEach(b=>b.onclick=()=>printIssue(b.dataset.print,f,true));
+  el.querySelectorAll("[data-print]").forEach(b=>b.onclick=()=>{
+    const o=S.orders.find(x=>x.id===b.dataset.print); if(!o) return;
+    if(o.printedAt&&!confirm(`Веќе е испечатена од ${o.printedBy||"некој"} во ${tStr(o.printedAt)}.\nПечати пак?`)) return;
+    printIssue(o.id,f,true);
+    const who=(document.querySelector(`input[data-prep="${o.id}"]`)||{}).value||S.name;
+    S.fs.doc("orders/"+o.id).update({printedAt:Date.now(),printedBy:String(who).trim()||S.name}).catch(()=>{});
+  });
 }
 function issue(id){
   const o=S.orders.find(x=>x.id===id); if(!o) return;
