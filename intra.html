@@ -21,7 +21,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "117394222949",
   appId: "1:117394222949:web:4dc2966aca15a893dbbb8c"
 };
-const APP_VER = "19.11";
+const APP_VER = "19.11b";
 const COLL = "intra";
 
 /* ============================================================
@@ -243,8 +243,42 @@ function render(){
 
 /* ---- items ---- */
 const itemsOf=d=>(d.items||[]);
+const bat=d=>(d.batches||[]);
+const doneQ=(d,n)=>bat(d).reduce((s,b)=>s+((b.q||{})[n]||0),0);
+const remQ=(d,n)=>Math.max(0,((itemsOf(d).find(i=>i.name===n)||{}).qty||0)-doneQ(d,n));
+const remAll=d=>itemsOf(d).every(i=>remQ(d,i.name)<=0);
 function itemsHtml(d){
   return `<div class="items">${itemsOf(d).map(it=>`<div class="item"><div class="nm">${esc(it.name)}</div><div class="big">${esc(it.dim)} <small>×</small> ${fmt(it.qty)}</div></div>`).join("")}</div>`;
+}
+/* за Кроење: колку уште остануваат */
+function remHtml(d){
+  return `<div class="items">${itemsOf(d).map(it=>{const r=remQ(d,it.name),dn=doneQ(d,it.name);
+    return `<div class="item"><div class="nm">${esc(it.name)}${dn?` · спремено ${fmt(dn)} од ${fmt(it.qty)}`:""}</div><div class="big">${esc(it.dim)} <small>×</small> ${fmt(r)}${dn?` <small>уште</small>`:""}</div></div>`}).join("")}</div>`;
+}
+function batchHtml(d,b){
+  return `<div class="items">${itemsOf(d).filter(it=>(b.q||{})[it.name]).map(it=>`<div class="item"><div class="nm">${esc(it.name)}</div><div class="big">${esc(it.dim)} <small>×</small> ${fmt(b.q[it.name])}</div></div>`).join("")}</div>`;
+}
+function addBatch(d,q){
+  const now=Date.now(), batches=[...bat(d),{q,readyAt:now,readyBy:S.name}];
+  const upd={batches}; if(!d.firstReadyAt) upd.firstReadyAt=now;
+  const nd={...d,batches}; if(remAll(nd)){upd.status="ready";upd.readyAt=now;upd.readyBy=S.name}
+  S.fs.doc(COLL+"/"+d.id).update(upd).catch(()=>toast("Не се зачува."));
+  toast(remAll(nd)?"Сè е спремно – Интра ќе ја земе количката":"Делот е спремен – Интра ќе го однесе");
+}
+function partSheet(d){
+  openSheet(`<p class="scode" style="font-size:22px">${esc(d.eri)}</p><p class="sdesc">Колку спремивте сега? (смени ако е помалку)</p>
+    ${itemsOf(d).map(it=>`<label class="field"><span>${esc(it.name)} ${esc(it.dim)} – остануваат ${fmt(remQ(d,it.name))}</span>
+      <input class="bigqty" style="font-size:36px" data-pq="${esc(it.name)}" inputmode="numeric" value="${remQ(d,it.name)}" autocomplete="off"></label>`).join("")}
+    <div class="btns"><button class="btn ghost" id="pX">Откажи</button><button class="btn okb" id="pOk">Спремно – на количка</button></div>`);
+  $("#pX").onclick=closeSheet;
+  $("#pOk").onclick=()=>{
+    const q={}; let bad=false,any=false;
+    $("#sheet").querySelectorAll("[data-pq]").forEach(inp=>{const n=inp.dataset.pq, v=parseInt(String(inp.value).replace(/\s/g,""),10)||0, r=remQ(d,n);
+      if(v<0||v>r){bad=true;inp.focus()} if(v>0){q[n]=v;any=true}});
+    if(bad){toast("Количината не може да е повеќе од тоа што остана");return}
+    if(!any){toast("Внеси колку спремивте");return}
+    closeSheet(); addBatch(d,q);
+  };
 }
 const matTag=d=>d.material&&d.material!==(F().materials||[])[0]?`<span class="tag mat">${esc(d.material)}</span>`:"";
 const urgTag=d=>d.urgent?'<span class="tag urg">ИТНО</span>':"";
@@ -259,9 +293,9 @@ function rReq(){
   if(FLOWS.length>1) h=`<div class="chips">${FLOWS.map(x=>`<button class="chip" data-fl="${x.id}" aria-pressed="${x.id===f.id}">${esc(x.name)}</button>`).join("")}</div>`+h;
   h+=`<h2>Пуштено денес (${today.length})</h2>`;
   if(!today.length) h+=`<div class="empty"><b>Ништо уште не е пуштено денес</b>Притисни „Скенирај стикер“ долу.</div>`;
-  else h+=`<div class="list">${today.map(d=>`<div class="row"><div class="main"><div><b>${esc(d.eri)}</b>${urgTag(d)}${matTag(d)} <span class="tag ${d.status!=="new"?"ok":""}">${ST[d.status]||d.status}</span></div>
+  else h+=`<div class="list">${today.map(d=>`<div class="row"><div class="main"><div><b>${esc(d.eri)}</b>${urgTag(d)}${matTag(d)} <span class="tag ${d.status!=="new"?"ok":""}">${stL(d)}</span></div>
       <div class="meta">${esc(itemsOf(d).map(i=>`${i.name} ${i.dim}×${fmt(i.qty)}`).join(" · "))} · ${hm(d.createdAt)}, ${esc(d.byName||"")}${d.pending?" · чека интернет":""}</div></div>
-      ${d.status==="new"?`<button class="del" data-x="${d.id}">Откажи</button>`:""}</div>`).join("")}</div>`;
+      ${d.status==="new"&&!(d.batches||[]).length?`<button class="del" data-x="${d.id}">Откажи</button>`:""}</div>`).join("")}</div>`;
   el.innerHTML=h;
   el.querySelectorAll("[data-fl]").forEach(b=>b.onclick=()=>{S.flow=b.dataset.fl;store.set("intra-flow",S.flow);render()});
   el.querySelectorAll("[data-x]").forEach(b=>b.onclick=()=>{const d=S.docs.find(x=>x.id===b.dataset.x);if(!d)return;
@@ -269,6 +303,7 @@ function rReq(){
     S.fs.doc(COLL+"/"+d.id).update({status:"cancelled",cancelledAt:Date.now(),cancelledBy:S.name}).catch(()=>toast("Не се зачува."));toast("Откажано")});
 }
 const ST={new:"чека",ready:"спремно",delivered:"доставено",cancelled:"откажано"};
+const stL=d=>d.status==="new"&&(d.batches||[]).length?"делумно":d.status==="ready"&&(d.batches||[]).some(b=>b.deliveredAt)?"делумно доставено":(ST[d.status]||d.status);
 
 function onScan(raw){
   const r=parseLabel(raw);
@@ -328,36 +363,44 @@ function rPrep(){
   if(!list.length) h+=`<div class="empty"><b>Нема ништо за спремање</b>Кога ${esc(f.req)} ќе пушти нарачка, ќе се појави тука сама.</div>`;
   else if(S.prepView==="sum"){
     const names=f.perPiece.map(p=>p.name), m=new Map();
-    for(const d of list) for(const it of itemsOf(d)){const k=it.dim+"|"+(d.material||"");if(!m.has(k))m.set(k,{dim:it.dim,mat:d.material,q:{}});const o=m.get(k);o.q[it.name]=(o.q[it.name]||0)+it.qty}
+    for(const d of list) for(const it of itemsOf(d)){const k=it.dim+"|"+(d.material||"");if(!m.has(k))m.set(k,{dim:it.dim,mat:d.material,q:{}});const o=m.get(k);o.q[it.name]=(o.q[it.name]||0)+remQ(d,it.name)}
     const rows=[...m.values()].sort((a,b)=>a.dim-b.dim);
     h+=`<div class="sum" style="grid-template-columns:auto ${names.map(()=>"1fr").join(" ")}"><div class="h">Димензија</div>${names.map(n=>`<div class="h">${esc(n)}</div>`).join("")}
       ${rows.map(r=>`<div class="dim">${r.dim}${r.mat&&r.mat!==(f.materials||[])[0]?` <span class="tag mat">${esc(r.mat)}</span>`:""}</div>${names.map(n=>`<div>${fmt(r.q[n]||0)}</div>`).join("")}`).join("")}</div>
       <p class="meta">Збирот е само за кроење наеднаш. „Спремно“ се стиска по нарачка, во „По нарачка“.</p>`;
   } else {
     h+=list.map(d=>`<div class="order${d.urgent?" urgent":""}"><div class="ohead"><b>${esc(d.eri)}</b>${urgTag(d)}${matTag(d)}<span class="meta">${esc(d.pieces)} парч. · ${esc(d.byName||"")}, ${tStr(d.createdAt)}${d.pending?" · чека интернет":""}</span></div>
-      ${itemsHtml(d)}
-      <div class="ofoot"><button class="btn okb" data-rd="${d.id}" style="flex:1">Спремно – на количка</button></div></div>`).join("");
+      ${remHtml(d)}
+      <div class="ofoot"><button class="btn ghost" data-pt="${d.id}" style="flex:1">Дел спремно</button><button class="btn okb" data-rd="${d.id}" style="flex:1">${bat(d).length?"Остатокот спремен":"Сè спремно"}</button></div></div>`).join("");
   }
   el.innerHTML=h;
   el.querySelectorAll("[data-pv]").forEach(b=>b.onclick=()=>{S.prepView=b.dataset.pv;store.set("intra-pv",S.prepView);render()});
-  el.querySelectorAll("[data-rd]").forEach(b=>b.onclick=()=>{
-    S.fs.doc(COLL+"/"+b.dataset.rd).update({status:"ready",readyAt:Date.now(),readyBy:S.name}).catch(()=>toast("Не се зачува."));toast("Спремно – Интра ќе ја земе количката")});
+  el.querySelectorAll("[data-pt]").forEach(b=>b.onclick=()=>{const d=S.docs.find(x=>x.id===b.dataset.pt);if(d)partSheet(d)});
+  el.querySelectorAll("[data-rd]").forEach(b=>b.onclick=()=>{const d=S.docs.find(x=>x.id===b.dataset.rd);if(!d)return;
+    const q={};itemsOf(d).forEach(it=>{const r=remQ(d,it.name);if(r>0)q[it.name]=r});addBatch(d,q)});
 }
 
 /* ---- 3. НОСИ (Интра) ---- */
 function rDel(){
   const f=F(), el=$("#tab-del");
   if(!S.ready){el.innerHTML='<div class="empty">Се вчитува…</div>';return}
-  const list=sortD(mine().filter(d=>d.status==="ready"));
+  const parts=[];
+  for(const d of mine().filter(x=>x.status==="new"||x.status==="ready")) bat(d).forEach((b,i)=>{if(!b.deliveredAt)parts.push({d,b,i})});
+  parts.sort((x,y)=>(y.d.urgent?1:0)-(x.d.urgent?1:0)||x.b.readyAt-y.b.readyAt);
   const wait=mine().filter(d=>d.status==="new").length;
-  let h=wait?`<p class="meta" style="margin-top:0">Уште ${wait} нарачки чекаат кај ${esc(f.prep)}.</p>`:"";
-  if(!list.length) h+=`<div class="empty"><b>Нема ништо за носење</b>Тука се појавува сè што ${esc(f.prep)} означил како спремно.</div>`;
-  h+=list.map(d=>`<div class="order${d.urgent?" urgent":""}"><div class="ohead"><b>${esc(d.eri)}</b>${urgTag(d)}${matTag(d)}<span class="meta">спремно ${hm(d.readyAt)}, ${esc(d.readyBy||"")}</span></div>
-    ${itemsHtml(d)}
-    <div class="ofoot"><button class="btn okb" data-dl="${d.id}" style="flex:1">Доставено на ${esc(f.to)}</button></div></div>`).join("");
+  let h=wait?`<p class="meta" style="margin-top:0">Кај ${esc(f.prep)} се во работа ${wait} нарачки.</p>`:"";
+  if(!parts.length) h+=`<div class="empty"><b>Нема ништо за носење</b>Тука се појавува сè што ${esc(f.prep)} означил како спремно.</div>`;
+  h+=parts.map(({d,b,i})=>{const last=d.status==="ready"&&bat(d).filter(x=>!x.deliveredAt).length===1;
+    return `<div class="order${d.urgent?" urgent":""}"><div class="ohead"><b>${esc(d.eri)}</b>${urgTag(d)}${matTag(d)}${last?'<span class="tag ok">последно</span>':d.status==="new"?'<span class="tag">дел</span>':""}<span class="meta">спремно ${hm(b.readyAt)}, ${esc(b.readyBy||"")}</span></div>
+    ${batchHtml(d,b)}
+    <div class="ofoot"><button class="btn okb" data-dl="${d.id}|${i}" style="flex:1">Доставено на ${esc(f.to)}</button></div></div>`}).join("");
   el.innerHTML=h;
-  el.querySelectorAll("[data-dl]").forEach(b=>b.onclick=()=>{
-    S.fs.doc(COLL+"/"+b.dataset.dl).update({status:"delivered",deliveredAt:Date.now(),deliveredBy:S.name}).catch(()=>toast("Не се зачува."));toast("Доставено")});
+  el.querySelectorAll("[data-dl]").forEach(btn=>btn.onclick=()=>{
+    const [id,ix]=btn.dataset.dl.split("|"); const d=S.docs.find(x=>x.id===id); if(!d)return;
+    const now=Date.now(), batches=bat(d).map((b,k)=>k===+ix?{...b,deliveredAt:now,deliveredBy:S.name}:b);
+    const upd={batches}; if(!d.firstDeliveredAt) upd.firstDeliveredAt=now;
+    if(d.status==="ready"&&batches.every(b=>b.deliveredAt)){upd.status="delivered";upd.deliveredAt=now;upd.deliveredBy=S.name}
+    S.fs.doc(COLL+"/"+id).update(upd).catch(()=>toast("Не се зачува."));toast(upd.status?"Нарачката е целосно доставена":"Доставено")});
 }
 
 /* ---- 4. ИЗВЕШТАЈ ---- */
@@ -375,8 +418,8 @@ function rRep(){
     <h2>${dStr(d0)} (${list.length})</h2>
     ${list.length?`<div class="list">${list.map(d=>`<div class="row"><div class="main"><div><b>${esc(d.eri)}</b>${urgTag(d)}${matTag(d)}</div>
       <div class="meta">${esc(itemsOf(d).map(i=>`${i.name} ${i.dim}×${fmt(i.qty)}`).join(" · "))}</div>
-      <div class="meta">пуштено ${hm(d.createdAt)}${d.readyAt?` · спремно за ${mins(d.createdAt,d.readyAt)} мин`:""}${d.deliveredAt?` · доставено за ${mins(d.createdAt,d.deliveredAt)} мин`:""}</div></div>
-      <span class="tag ${d.status==="delivered"?"ok":""}">${ST[d.status]||d.status}</span></div>`).join("")}</div>`:'<div class="empty">Нема ништо за тој ден.</div>'}`;
+      <div class="meta">пуштено ${hm(d.createdAt)}${d.firstReadyAt&&(d.batches||[]).length>1?` · прв дел за ${mins(d.createdAt,d.firstReadyAt)} мин`:""}${d.readyAt?` · сè спремно за ${mins(d.createdAt,d.readyAt)} мин`:""}${d.deliveredAt?` · сè доставено за ${mins(d.createdAt,d.deliveredAt)} мин`:""}${(d.batches||[]).length>1?` · ${(d.batches||[]).length} дела`:""}</div></div>
+      <span class="tag ${d.status==="delivered"?"ok":""}">${stL(d)}</span></div>`).join("")}</div>`:'<div class="empty">Нема ништо за тој ден.</div>'}`;
   $("#rd").onchange=e=>{S.repDate=e.target.value||S.repDate;render()};
   $("#xls").onclick=()=>xls(list,"Intra_"+S.repDate+".xlsx");
   $("#pf").onchange=e=>S.perFrom=e.target.value; $("#pt").onchange=e=>S.perTo=e.target.value;
@@ -393,9 +436,9 @@ function rRep(){
 function xls(list,file){
   if(!list.length){toast("Нема ништо");return}
   const f=F(), names=f.perPiece.map(p=>p.name);
-  const rows=[["ERI нарачка","Купувач","PO","Модел","Week","Висина","Парчиња",...names,"Материјал","Итно","Пуштил","Пуштено","Спремил","Спремно","Доставил","Доставено","Мин. до спремно","Мин. до доставено","Статус","Внес"]];
+  const rows=[["ERI нарачка","Купувач","PO","Модел","Week","Висина","Парчиња",...names,"Материјал","Итно","Пуштил","Пуштено","Спремил","Спремно","Доставил","Доставено","Мин. до спремно","Мин. до доставено","Делови","Мин. до прв дел","Статус","Внес"]];
   for(const d of list){const q=n=>(itemsOf(d).find(i=>i.name===n)||{}).qty??"";
-    rows.push([d.eri,d.customer,d.po,d.model,d.week,d.height,d.pieces,...names.map(q),d.material,d.urgent?"Да":"",d.byName,tStr(d.createdAt),d.readyBy||"",tStr(d.readyAt),d.deliveredBy||"",tStr(d.deliveredAt),mins(d.createdAt,d.readyAt)??"",mins(d.createdAt,d.deliveredAt)??"",ST[d.status]||d.status,d.src||""])}
+    rows.push([d.eri,d.customer,d.po,d.model,d.week,d.height,d.pieces,...names.map(q),d.material,d.urgent?"Да":"",d.byName,tStr(d.createdAt),d.readyBy||"",tStr(d.readyAt),d.deliveredBy||"",tStr(d.deliveredAt),mins(d.createdAt,d.readyAt)??"",mins(d.createdAt,d.deliveredAt)??"",(d.batches||[]).length||"",mins(d.createdAt,d.firstReadyAt)??"",stL(d),d.src||""])}
   const wb=XLSX.utils.book_new(), s=XLSX.utils.aoa_to_sheet(rows);
   s["!cols"]=rows[0].map((h,i)=>({wch:i===1?22:Math.max(9,String(h).length+2)})); s["!autofilter"]={ref:"A1:"+XLSX.utils.encode_col(rows[0].length-1)+rows.length};
   XLSX.utils.book_append_sheet(wb,s,f.name.slice(0,30)); XLSX.writeFile(wb,file);
