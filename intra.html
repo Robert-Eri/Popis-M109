@@ -1,0 +1,517 @@
+<!doctype html>
+<html lang="mk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1F45B8">
+<title>Интра – полупроизводи</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyDH2zKS74zUBkxy9Hm_5cc60Umn6DIaB7Y",
+  authDomain: "inventory-control-eri.firebaseapp.com",
+  projectId: "inventory-control-eri",
+  storageBucket: "inventory-control-eri.firebasestorage.app",
+  messagingSenderId: "117394222949",
+  appId: "1:117394222949:web:4dc2966aca15a893dbbb8c"
+};
+const APP_VER = "19.11";
+const COLL = "intra";
+
+/* ============================================================
+   ТЕКОВИ (линии). За нов тек се додава нов запис тука.
+   req  = фазата што бара (скенира и пушта)
+   prep = фазата што спрема
+   to   = каде Интра доставува
+   ============================================================ */
+const FLOWS = [
+  { id:"kap", name:"Капаци и лајсни", req:"Редење", prep:"Кроење", to:"Капацирање",
+    perPiece:[ {name:"Капак", n:2}, {name:"Лајсна", n:2} ],
+    materials:["Регуларен","Бел алуминиум"] }
+];
+</script>
+<style>
+:root{--bg:#E9EDEC;--surface:#FFF;--ink:#16232B;--muted:#5B6B73;--line:#CBD3D2;--accent:#1F45B8;--accent-ink:#FFF;--ok:#2B7A4B;--ok-soft:#DCEFE3;--warn:#A65F00;--warn-soft:#F6E7CF;--danger:#B3261E;--urgent:#C2410C;
+ color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root{--bg:#0F1619;--surface:#18232A;--ink:#E6ECEC;--muted:#93A3A9;--line:#2C3A41;--accent:#7C9BFF;--accent-ink:#0B1530;--ok:#6FCF97;--ok-soft:#1C3527;--warn:#F2B35B;--warn-soft:#3A2B14;--danger:#FF8A80;--urgent:#FDBA74;color-scheme:dark}}
+*,*::before,*::after{box-sizing:inherit}
+html{height:100%}
+body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);font-family:"Golos Text",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:16px;line-height:1.45;font-variant-numeric:tabular-nums;padding-bottom:110px}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--surface)}
+button,input,select,textarea{font:inherit;color:inherit}button{cursor:pointer}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+header{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--surface);border-bottom:1px solid var(--line)}
+.wrap{max-width:760px;margin:0 auto;padding:0 16px}
+.top{display:flex;align-items:center;gap:10px;padding:12px 0 6px}
+.top h1{font-size:19px;font-weight:800;margin:0}
+.top .who{margin-left:auto;font-size:13px;color:var(--muted);background:none;border:0}
+nav{display:flex;gap:4px}
+nav button{flex:1;background:none;border:0;border-bottom:3px solid transparent;padding:10px 4px;font-weight:600;color:var(--muted);position:relative}
+nav button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+.badge{display:inline-block;min-width:20px;padding:0 6px;border-radius:999px;background:var(--urgent);color:#fff;font-size:12px;line-height:20px;margin-left:4px}
+main{padding:14px 0}
+.notice{background:var(--warn-soft);border-left:4px solid var(--warn);padding:10px 12px;border-radius:6px;margin-bottom:14px;font-size:14px}
+.empty{padding:28px 8px;text-align:center;color:var(--muted)}.empty b{display:block;color:var(--ink);font-size:18px;margin-bottom:6px}
+h2{font-size:15px;font-weight:700;margin:18px 0 8px;color:var(--muted)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px}
+.list{background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.row{display:flex;align-items:center;gap:10px;padding:10px 12px;border-top:1px solid var(--line)}.row:first-child{border-top:0}
+.row .main{flex:1;min-width:0}
+.meta{font-size:12px;color:var(--muted)}
+.tag{display:inline-block;font-size:11px;font-weight:700;border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:2px;border:1px solid var(--line);background:var(--bg)}
+.tag.urg{background:var(--urgent);border-color:var(--urgent);color:#fff}.tag.ok{background:var(--ok-soft);color:var(--ok);border-color:transparent}
+.tag.mat{background:var(--warn-soft);color:var(--warn);border-color:var(--warn)}
+.del{background:none;border:0;color:var(--danger);font-size:14px;padding:6px}
+.btn{border:0;border-radius:10px;padding:12px 16px;font-weight:700;background:var(--accent);color:var(--accent-ink)}
+.btn.ghost{background:var(--surface);color:var(--ink);border:1px solid var(--line)}
+.btn.okb{background:var(--ok);color:#fff}
+.btns{display:flex;gap:8px;flex-wrap:wrap}
+.toggle{display:flex;align-items:center;gap:10px;font-weight:600}
+.toggle input{width:22px;height:22px}
+.field{display:block;margin-bottom:10px}.field span{display:block;font-size:13px;color:var(--muted);margin-bottom:3px}
+.field input,.field select,.field textarea{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px 11px}
+.order{background:var(--surface);border:1px solid var(--line);border-radius:10px;margin-bottom:12px;overflow:hidden}
+.order.urgent{border:2px solid var(--urgent)}
+.ohead{display:flex;align-items:baseline;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.ohead b{font-size:17px}.ohead .meta{margin-left:auto}
+.items{display:flex;gap:10px;padding:10px 12px;flex-wrap:wrap}
+.item{flex:1 1 140px;background:var(--bg);border-radius:8px;padding:8px 10px}
+.item .nm{font-size:13px;color:var(--muted);font-weight:600}
+.item .big{font-size:24px;font-weight:800;line-height:1.2}.item .big small{font-size:15px;color:var(--muted);font-weight:600}
+.ofoot{padding:10px 12px;border-top:1px solid var(--line);display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:7px 12px;font-size:14px;font-weight:600}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.sum{display:grid;grid-template-columns:auto 1fr 1fr;gap:0;background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.sum div{padding:9px 12px;border-top:1px solid var(--line);font-weight:700;font-size:18px}
+.sum .h{font-size:12px;color:var(--muted);font-weight:600;border-top:0}
+.sum .dim{font-size:22px;font-weight:800}
+.scanbar{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px))}
+.scanbar .wrap{display:flex;gap:8px;padding:0}.scanbar .btn{flex:1;font-size:17px;padding:15px}.scanbar .btn.ghost{flex:0 0 auto;font-size:15px}
+.overlay{position:fixed;inset:0;z-index:20;background:#000;display:none;flex-direction:column}.overlay.open{display:flex}
+.overlay video{flex:1;width:100%;object-fit:cover;min-height:0}
+.frame{position:absolute;left:50%;top:42%;width:min(64vw,280px);aspect-ratio:1;transform:translate(-50%,-50%);border:3px solid #fff;border-radius:14px;box-shadow:0 0 0 100vmax rgba(0,0,0,.45)}
+.ov-msg{position:absolute;left:16px;right:16px;top:calc(16px + env(safe-area-inset-top,0px));color:#fff;text-align:center;font-weight:600;text-shadow:0 1px 3px #000}
+.ov-bar{display:flex;flex-wrap:wrap;gap:8px;padding:12px 16px calc(16px + env(safe-area-inset-bottom,0px));background:#000}
+.ov-bar button{flex:1 1 30%;border:1px solid #555;background:#1b1b1b;color:#fff;border-radius:10px;padding:14px 8px;font-weight:600}
+.sheet-bg{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.5);display:none;align-items:flex-end;justify-content:center}.sheet-bg.open{display:flex}
+.sheet{background:var(--surface);width:100%;max-width:560px;border-radius:16px 16px 0 0;padding:18px 18px calc(18px + env(safe-area-inset-bottom,0px));max-height:92vh;overflow:auto}
+.scode{font-size:26px;font-weight:800;word-break:break-all;margin:0}.sdesc{color:var(--muted);margin:2px 0 10px}
+.unknown{background:var(--warn-soft);border-left:4px solid var(--warn);border-radius:6px;padding:9px 12px;font-size:14px;margin-bottom:10px}
+.bigqty{width:100%;font-size:48px;font-weight:800;text-align:center;border:2px solid var(--line);border-radius:12px;padding:4px;background:var(--bg);margin-bottom:10px}
+.bigqty:focus{border-color:var(--accent);outline:none}
+.calc{font-size:15px;color:var(--muted);text-align:center;margin:-4px 0 12px;min-height:22px}.calc b{color:var(--ink)}
+.sheet .btns .btn{flex:1;font-size:17px;padding:14px}
+.toast{position:fixed;left:50%;bottom:calc(100px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:40;background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:999px;font-weight:600;font-size:15px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw;text-align:center}.toast.show{opacity:1}
+#nameDlg{position:fixed;inset:0;z-index:50;background:var(--bg);display:none;align-items:center;justify-content:center;padding:24px}#nameDlg.open{display:flex}
+#nameDlg .card{width:100%;max-width:380px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div id="nameDlg"><div class="card">
+  <h1 style="margin:0 0 6px;font-size:24px">Интра</h1>
+  <p style="color:var(--muted);margin-top:0">Внеси го твоето име. Ќе стои на секој чекор.</p>
+  <label class="field"><span>Име и презиме</span><input id="nmIn" autocomplete="name"></label>
+  <button class="btn" id="nmOk" style="width:100%">Почни</button>
+</div></div>
+
+<header><div class="wrap">
+  <div class="top"><h1 id="ttl">Интра</h1><span style="font-size:11px;color:var(--muted)" id="ver"></span><button class="who" id="who"></button></div>
+  <nav role="tablist" id="nav"></nav>
+</div></header>
+<main class="wrap">
+  <div id="banner"></div>
+  <section id="tab-req"></section>
+  <section id="tab-prep" hidden></section>
+  <section id="tab-del" hidden></section>
+  <section id="tab-rep" hidden></section>
+</main>
+<div class="scanbar" id="scanbar"><div class="wrap">
+  <button class="btn" id="scanBtn">Скенирај стикер</button>
+  <button class="btn ghost" id="manualBtn">Рачно</button>
+</div></div>
+<div class="overlay" id="cam">
+  <video id="video" playsinline muted></video><div class="frame"></div>
+  <div class="ov-msg" id="camMsg"></div>
+  <div id="camInfo" style="position:absolute;right:10px;bottom:calc(84px + env(safe-area-inset-bottom,0px));color:#aaa;font-size:11px"></div>
+  <div class="ov-bar"><button id="camSwitch" hidden>Камера</button><button id="camTorch" hidden>Светло</button><button id="camZoom" hidden>Зум 2×</button><button id="camPhoto">Сликај</button><button id="camManual">Внеси рачно</button><button id="camClose">Затвори</button></div>
+</div>
+<input type="file" id="photoIn" accept="image/*" capture="environment" hidden>
+<div class="sheet-bg" id="sheetBg"><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(() => {
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt=n=>(Math.round(n*1000)/1000).toLocaleString("mk-MK");
+const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+let tt;function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(tt);tt=setTimeout(()=>t.classList.remove("show"),2600)}
+const p2=n=>String(n).padStart(2,"0");
+const tStr=t=>{if(!t)return"";const d=new Date(t);return `${p2(d.getDate())}.${p2(d.getMonth()+1)} ${p2(d.getHours())}:${p2(d.getMinutes())}`};
+const hm=t=>{if(!t)return"";const d=new Date(t);return `${p2(d.getHours())}:${p2(d.getMinutes())}`};
+const dStr=t=>{const d=new Date(t);return `${p2(d.getDate())}.${p2(d.getMonth()+1)}.${d.getFullYear()}`};
+const mins=(a,b)=>a&&b?Math.round((b-a)/60000):null;
+const normE=s=>String(s??"").replace(/\s+/g,"").toUpperCase();
+
+const S={fs:null,uid:null,name:store.get("nar-name")||"",ready:false,online:navigator.onLine,
+  flow:store.get("intra-flow")||FLOWS[0].id, tab:store.get("intra-tab")||"req",
+  docs:[],prepView:store.get("intra-pv")||"nal",repDate:new Date().toISOString().slice(0,10),
+  stream:null,scanning:false,liveOk:true,cams:[],track:null,torch:false,zoom:1};
+const F=()=>FLOWS.find(f=>f.id===S.flow)||FLOWS[0];
+/* директен линк до таб: intra.html#t=prep */
+(()=>{const m=location.hash.match(/t=(req|prep|del|rep)/);if(m){S.tab=m[1];store.set("intra-tab",S.tab)}})();
+
+/* ---- читање на стикерот ----
+   QR: Купувач \t PO \t Код купувач \t Модел \t Сер.бр \t ERI бр. \t Week */
+function heightOf(model){
+  const parts=String(model||"").split("-").map(s=>s.trim());
+  for(let i=parts.length-1;i>=1;i--) if(/^\d+$/.test(parts[i])) return parseInt(parts[i],10);
+  return null;
+}
+function thickOf(model){const m=String(model||"");return /-3-/.test(m)?3:/-2\.9-/.test(m)?2.9:2.1}
+function parseLabel(raw){
+  const t=String(raw||"").replace(/\r/g,"");
+  let p=t.split(/\t|\n/).map(s=>s.trim());
+  if(p.length<5) p=t.split(/\s*[|;]\s*/).map(s=>s.trim());
+  const r={raw:t,customer:"",po:"",custCode:"",model:"",serial:"",eri:"",week:""};
+  if(p.length>=6){ [r.customer,r.po,r.custCode,r.model,r.serial,r.eri,r.week]=[p[0],p[1],p[2],p[3],p[4],p[5],p[6]||""]; }
+  const mi=p.findIndex(x=>/^PCF/i.test(x)); if(mi>=0&&!/^PCF/i.test(r.model)) r.model=p[mi];
+  if(!/^\d{2}\/\d/.test(r.eri)){const e=p.find(x=>/^\d{2}\/\d+/.test(x)); if(e) r.eri=e;}
+  r.h=heightOf(r.model); r.th=thickOf(r.model);
+  return r;
+}
+
+/* ---- firebase ---- */
+if(!window.firebase){S.err="Нема врска со Firebase."}
+else{
+  firebase.initializeApp(FIREBASE_CONFIG); S.fs=firebase.firestore();
+  S.fs.enablePersistence({synchronizeTabs:true}).catch(()=>{});
+  firebase.auth().onAuthStateChanged(u=>{
+    if(!u){firebase.auth().signInAnonymously().catch(()=>{S.err="Не може да се поврзе. Во Firebase вклучи Anonymous.";render()});return}
+    S.uid=u.uid; if(!S.name){$("#nameDlg").classList.add("open");setTimeout(()=>$("#nmIn").focus(),100)}
+    listen();
+  });
+}
+addEventListener("online",()=>{S.online=true;render()});addEventListener("offline",()=>{S.online=false;render()});
+$("#nmOk").onclick=()=>{const n=$("#nmIn").value.trim();if(!n)return;S.name=n;store.set("nar-name",n);$("#nameDlg").classList.remove("open");render()};
+$("#nmIn").onkeydown=e=>{if(e.key==="Enter")$("#nmOk").click()};
+$("#who").onclick=()=>{const n=prompt("Твоето име:",S.name);if(n&&n.trim()){S.name=n.trim();store.set("nar-name",S.name);render()}};
+
+let unsub=null;
+function listen(){
+  if(unsub) unsub();
+  const since=Date.now()-14*864e5;
+  unsub=S.fs.collection(COLL).where("createdAt",">=",since).onSnapshot({includeMetadataChanges:true},snap=>{
+    S.docs=snap.docs.map(d=>({id:d.id,pending:d.metadata.hasPendingWrites,...d.data()}));
+    S.ready=true; render();
+  },err=>{S.ready=true;S.err="Нема пристап до базата. Во Firebase → Firestore → Rules додади правило за „"+COLL+"“ (исто како за orders).";render()});
+}
+const mine=()=>S.docs.filter(d=>(d.flow||FLOWS[0].id)===F().id);
+const sortD=a=>a.sort((x,y)=>(y.urgent?1:0)-(x.urgent?1:0)||(x.createdAt||0)-(y.createdAt||0));
+
+/* ---- табови ---- */
+function tabs(){
+  const f=F();
+  return [["req",f.req],["prep",f.prep],["del","Интра"],["rep","Извештај"]];
+}
+function drawNav(){
+  const nNew=mine().filter(d=>d.status==="new").length, nRdy=mine().filter(d=>d.status==="ready").length;
+  $("#nav").innerHTML=tabs().map(([k,l])=>`<button role="tab" data-tab="${k}" aria-selected="${S.tab===k}">${esc(l)}${
+    k==="prep"&&nNew?` <span class="badge">${nNew}</span>`:k==="del"&&nRdy?` <span class="badge" style="background:var(--accent)">${nRdy}</span>`:""}</button>`).join("");
+  $("#nav").querySelectorAll("button").forEach(b=>b.onclick=()=>{S.tab=b.dataset.tab;store.set("intra-tab",S.tab);render()});
+}
+function render(){
+  $("#ttl").textContent="Интра · "+F().name;
+  $("#who").textContent=S.name?S.name+" ✎":"";
+  let b="";
+  if(S.err) b=`<div class="notice">${esc(S.err)}</div>`;
+  else if(!S.online) b='<div class="notice">Нема интернет. Промените се чуваат на телефонот и ќе се испратат кога ќе се врати врската.</div>';
+  $("#banner").innerHTML=b;
+  drawNav();
+  ["req","prep","del","rep"].forEach(t=>$("#tab-"+t).hidden=t!==S.tab);
+  $("#scanbar").style.display=S.tab==="req"?"":"none";
+  ({req:rReq,prep:rPrep,del:rDel,rep:rRep})[S.tab]();
+}
+
+/* ---- items ---- */
+const itemsOf=d=>(d.items||[]);
+function itemsHtml(d){
+  return `<div class="items">${itemsOf(d).map(it=>`<div class="item"><div class="nm">${esc(it.name)}</div><div class="big">${esc(it.dim)} <small>×</small> ${fmt(it.qty)}</div></div>`).join("")}</div>`;
+}
+const matTag=d=>d.material&&d.material!==(F().materials||[])[0]?`<span class="tag mat">${esc(d.material)}</span>`:"";
+const urgTag=d=>d.urgent?'<span class="tag urg">ИТНО</span>':"";
+
+/* ---- 1. БАРА (Редење) ---- */
+function rReq(){
+  const f=F(), el=$("#tab-req");
+  const d0=new Date();d0.setHours(0,0,0,0);
+  const today=sortD(mine().filter(d=>d.createdAt>=d0.getTime())).reverse();
+  let h=`<div class="card"><b>${esc(f.req)} → ${esc(f.prep)} → ${esc(f.to)}</b>
+    <p class="meta" style="margin:4px 0 0">Скенирај го QR-стикерот од едно парче од нарачката и внеси колку парчиња е налогот. ${esc(f.prep)} веднаш гледа што треба да спреми.</p></div>`;
+  if(FLOWS.length>1) h=`<div class="chips">${FLOWS.map(x=>`<button class="chip" data-fl="${x.id}" aria-pressed="${x.id===f.id}">${esc(x.name)}</button>`).join("")}</div>`+h;
+  h+=`<h2>Пуштено денес (${today.length})</h2>`;
+  if(!today.length) h+=`<div class="empty"><b>Ништо уште не е пуштено денес</b>Притисни „Скенирај стикер“ долу.</div>`;
+  else h+=`<div class="list">${today.map(d=>`<div class="row"><div class="main"><div><b>${esc(d.eri)}</b>${urgTag(d)}${matTag(d)} <span class="tag ${d.status!=="new"?"ok":""}">${ST[d.status]||d.status}</span></div>
+      <div class="meta">${esc(itemsOf(d).map(i=>`${i.name} ${i.dim}×${fmt(i.qty)}`).join(" · "))} · ${hm(d.createdAt)}, ${esc(d.byName||"")}${d.pending?" · чека интернет":""}</div></div>
+      ${d.status==="new"?`<button class="del" data-x="${d.id}">Откажи</button>`:""}</div>`).join("")}</div>`;
+  el.innerHTML=h;
+  el.querySelectorAll("[data-fl]").forEach(b=>b.onclick=()=>{S.flow=b.dataset.fl;store.set("intra-flow",S.flow);render()});
+  el.querySelectorAll("[data-x]").forEach(b=>b.onclick=()=>{const d=S.docs.find(x=>x.id===b.dataset.x);if(!d)return;
+    if(!confirm(`Да се откаже ${d.eri}? (на пр. погрешно скенирано)`))return;
+    S.fs.doc(COLL+"/"+d.id).update({status:"cancelled",cancelledAt:Date.now(),cancelledBy:S.name}).catch(()=>toast("Не се зачува."));toast("Откажано")});
+}
+const ST={new:"чека",ready:"спремно",delivered:"доставено",cancelled:"откажано"};
+
+function onScan(raw){
+  const r=parseLabel(raw);
+  if(!r.eri&&!r.model){toast("Ова не е стикер од нарачка. Пробај пак или внеси рачно.");return}
+  showRelease(r);
+}
+function openSheet(h){$("#sheet").innerHTML=h;$("#sheetBg").classList.add("open")}
+function closeSheet(){$("#sheetBg").classList.remove("open")}
+$("#sheetBg").onclick=e=>{if(e.target.id==="sheetBg")closeSheet()};
+
+function showRelease(r,manual){
+  const f=F();
+  const dup=mine().filter(d=>d.status!=="cancelled"&&normE(d.eri)===normE(r.eri)&&r.eri);
+  const mats=f.materials||[];
+  openSheet(`${manual?`<label class="field"><span>ERI број на нарачка</span><input id="mE" value="${esc(r.eri)}" placeholder="на пр. 26/2002-4/4" autocomplete="off"></label>
+      <label class="field"><span>Висина (мм)</span><input id="mH" inputmode="numeric" value="${r.h||""}" autocomplete="off"></label>`
+    :`<p class="scode">${esc(r.eri||"без ERI број")}</p><p class="sdesc">${esc(r.model)}${r.customer?" · "+esc(r.customer):""}${r.week?" · week "+esc(r.week):""}</p>`}
+    ${!manual&&!r.h?`<div class="unknown">Висината не може да се прочита од моделот „${esc(r.model)}“.</div><label class="field"><span>Висина (мм)</span><input id="mH" inputmode="numeric" autocomplete="off"></label>`:""}
+    ${dup.length?`<div class="unknown"><b>Оваа нарачка е веќе пуштена</b> – ${esc(dup.map(d=>`${tStr(d.createdAt)}, ${d.byName||""}, ${ST[d.status]}`).join("; "))}. Пушти пак само ако навистина треба уште.</div>`:""}
+    <label class="field" style="margin-bottom:4px"><span>Колку парчиња е налогот?</span></label>
+    <input class="bigqty" id="qIn" type="text" inputmode="numeric" autocomplete="off" placeholder="0" aria-label="Парчиња">
+    <div class="calc" id="calc"></div>
+    ${mats.length>1?`<div class="chips" id="matc">${mats.map((m,i)=>`<button class="chip" data-m="${esc(m)}" aria-pressed="${i===0}">${esc(m)}</button>`).join("")}</div>`:""}
+    <label class="toggle" style="margin-bottom:12px"><input type="checkbox" id="urg"> Итно</label>
+    <div class="btns"><button class="btn ghost" id="qX">Откажи</button><button class="btn" id="qOk">Пушти кон ${esc(f.prep)}</button></div>`);
+  let mat=mats[0]||"";
+  $("#sheet").querySelectorAll("[data-m]").forEach(b=>b.onclick=()=>{mat=b.dataset.m;$("#sheet").querySelectorAll("[data-m]").forEach(x=>x.setAttribute("aria-pressed",x===b))});
+  const q=$("#qIn"); const hEl=$("#mH");
+  const H=()=>hEl?parseInt(hEl.value,10):r.h;
+  const upd=()=>{const n=parseInt(q.value,10),h=H(); $("#calc").innerHTML=n>0&&h>0?f.perPiece.map(p=>`${esc(p.name)} <b>${h} × ${n*p.n}</b>`).join(" · "):""};
+  q.oninput=upd; if(hEl) hEl.oninput=upd;
+  setTimeout(()=>(manual?$("#mE"):q).focus(),60);
+  const go=()=>{
+    const n=parseInt(String(q.value).replace(/\s/g,""),10), h=H();
+    const eri=manual?$("#mE").value.trim():r.eri;
+    if(manual&&!eri){toast("Внеси ERI број");$("#mE").focus();return}
+    if(!(h>0)){toast("Внеси висина");hEl&&hEl.focus();return}
+    if(!(n>0)){toast("Внеси број на парчиња");q.focus();return}
+    const doc={flow:f.id,eri,model:r.model||"",customer:r.customer||"",po:r.po||"",custCode:r.custCode||"",week:r.week||"",
+      height:h,thick:r.th||null,pieces:n,material:mat,urgent:$("#urg").checked,
+      items:f.perPiece.map(p=>({name:p.name,dim:h,qty:n*p.n})),
+      status:"new",createdAt:Date.now(),by:S.uid,byName:S.name,src:manual?"рачно":"QR"};
+    S.fs.collection(COLL).add(doc).catch(()=>toast("Не е испратено. Пробај пак."));
+    closeSheet();toast(`${eri||"Нарачката"} е пуштена кон ${f.prep}`);render();
+  };
+  $("#qOk").onclick=go; q.onkeydown=e=>{if(e.key==="Enter")go()}; $("#qX").onclick=closeSheet;
+}
+function manualEntry(){stopScan();showRelease({eri:"",model:"",h:null,th:null},true)}
+$("#scanBtn").onclick=()=>startScan(); $("#manualBtn").onclick=manualEntry;
+
+/* ---- 2. СПРЕМА (Кроење) ---- */
+function rPrep(){
+  const f=F(), el=$("#tab-prep");
+  if(!S.ready){el.innerHTML='<div class="empty">Се вчитува…</div>';return}
+  const list=sortD(mine().filter(d=>d.status==="new"));
+  let h=`<div class="chips"><button class="chip" data-pv="nal" aria-pressed="${S.prepView==="nal"}">По нарачка</button><button class="chip" data-pv="sum" aria-pressed="${S.prepView==="sum"}">Збирно по димензија</button></div>`;
+  if(!list.length) h+=`<div class="empty"><b>Нема ништо за спремање</b>Кога ${esc(f.req)} ќе пушти нарачка, ќе се појави тука сама.</div>`;
+  else if(S.prepView==="sum"){
+    const names=f.perPiece.map(p=>p.name), m=new Map();
+    for(const d of list) for(const it of itemsOf(d)){const k=it.dim+"|"+(d.material||"");if(!m.has(k))m.set(k,{dim:it.dim,mat:d.material,q:{}});const o=m.get(k);o.q[it.name]=(o.q[it.name]||0)+it.qty}
+    const rows=[...m.values()].sort((a,b)=>a.dim-b.dim);
+    h+=`<div class="sum" style="grid-template-columns:auto ${names.map(()=>"1fr").join(" ")}"><div class="h">Димензија</div>${names.map(n=>`<div class="h">${esc(n)}</div>`).join("")}
+      ${rows.map(r=>`<div class="dim">${r.dim}${r.mat&&r.mat!==(f.materials||[])[0]?` <span class="tag mat">${esc(r.mat)}</span>`:""}</div>${names.map(n=>`<div>${fmt(r.q[n]||0)}</div>`).join("")}`).join("")}</div>
+      <p class="meta">Збирот е само за кроење наеднаш. „Спремно“ се стиска по нарачка, во „По нарачка“.</p>`;
+  } else {
+    h+=list.map(d=>`<div class="order${d.urgent?" urgent":""}"><div class="ohead"><b>${esc(d.eri)}</b>${urgTag(d)}${matTag(d)}<span class="meta">${esc(d.pieces)} парч. · ${esc(d.byName||"")}, ${tStr(d.createdAt)}${d.pending?" · чека интернет":""}</span></div>
+      ${itemsHtml(d)}
+      <div class="ofoot"><button class="btn okb" data-rd="${d.id}" style="flex:1">Спремно – на количка</button></div></div>`).join("");
+  }
+  el.innerHTML=h;
+  el.querySelectorAll("[data-pv]").forEach(b=>b.onclick=()=>{S.prepView=b.dataset.pv;store.set("intra-pv",S.prepView);render()});
+  el.querySelectorAll("[data-rd]").forEach(b=>b.onclick=()=>{
+    S.fs.doc(COLL+"/"+b.dataset.rd).update({status:"ready",readyAt:Date.now(),readyBy:S.name}).catch(()=>toast("Не се зачува."));toast("Спремно – Интра ќе ја земе количката")});
+}
+
+/* ---- 3. НОСИ (Интра) ---- */
+function rDel(){
+  const f=F(), el=$("#tab-del");
+  if(!S.ready){el.innerHTML='<div class="empty">Се вчитува…</div>';return}
+  const list=sortD(mine().filter(d=>d.status==="ready"));
+  const wait=mine().filter(d=>d.status==="new").length;
+  let h=wait?`<p class="meta" style="margin-top:0">Уште ${wait} нарачки чекаат кај ${esc(f.prep)}.</p>`:"";
+  if(!list.length) h+=`<div class="empty"><b>Нема ништо за носење</b>Тука се појавува сè што ${esc(f.prep)} означил како спремно.</div>`;
+  h+=list.map(d=>`<div class="order${d.urgent?" urgent":""}"><div class="ohead"><b>${esc(d.eri)}</b>${urgTag(d)}${matTag(d)}<span class="meta">спремно ${hm(d.readyAt)}, ${esc(d.readyBy||"")}</span></div>
+    ${itemsHtml(d)}
+    <div class="ofoot"><button class="btn okb" data-dl="${d.id}" style="flex:1">Доставено на ${esc(f.to)}</button></div></div>`).join("");
+  el.innerHTML=h;
+  el.querySelectorAll("[data-dl]").forEach(b=>b.onclick=()=>{
+    S.fs.doc(COLL+"/"+b.dataset.dl).update({status:"delivered",deliveredAt:Date.now(),deliveredBy:S.name}).catch(()=>toast("Не се зачува."));toast("Доставено")});
+}
+
+/* ---- 4. ИЗВЕШТАЈ ---- */
+function rRep(){
+  const el=$("#tab-rep");
+  const d0=new Date(S.repDate+"T00:00:00").getTime(), d1=d0+864e5;
+  const list=mine().filter(d=>d.createdAt>=d0&&d.createdAt<d1).sort((a,b)=>a.createdAt-b.createdAt);
+  const done=list.filter(d=>d.deliveredAt), avg=done.length?Math.round(done.reduce((s,d)=>s+mins(d.createdAt,d.deliveredAt),0)/done.length):null;
+  el.innerHTML=`<div class="card"><label class="field"><span>Датум</span><input type="date" id="rd" value="${S.repDate}"></label>
+    ${avg!=null?`<p style="margin:0 0 10px">Просечно од пуштање до доставено: <b>${avg} мин</b> (${done.length} нарачки)</p>`:""}
+    <div class="btns"><button class="btn" id="xls">Симни Excel (овој ден)</button></div></div>
+    <div class="card"><b>Извештај за период</b>
+      <div class="btns" style="margin-top:8px"><label class="field" style="flex:1;margin:0"><span>Од</span><input type="date" id="pf" value="${S.perFrom||S.repDate.slice(0,8)+"01"}"></label><label class="field" style="flex:1;margin:0"><span>До</span><input type="date" id="pt" value="${S.perTo||S.repDate}"></label></div>
+      <div class="btns" style="margin-top:10px"><button class="btn ghost" id="pxls">Симни Excel за периодот</button></div></div>
+    <h2>${dStr(d0)} (${list.length})</h2>
+    ${list.length?`<div class="list">${list.map(d=>`<div class="row"><div class="main"><div><b>${esc(d.eri)}</b>${urgTag(d)}${matTag(d)}</div>
+      <div class="meta">${esc(itemsOf(d).map(i=>`${i.name} ${i.dim}×${fmt(i.qty)}`).join(" · "))}</div>
+      <div class="meta">пуштено ${hm(d.createdAt)}${d.readyAt?` · спремно за ${mins(d.createdAt,d.readyAt)} мин`:""}${d.deliveredAt?` · доставено за ${mins(d.createdAt,d.deliveredAt)} мин`:""}</div></div>
+      <span class="tag ${d.status==="delivered"?"ok":""}">${ST[d.status]||d.status}</span></div>`).join("")}</div>`:'<div class="empty">Нема ништо за тој ден.</div>'}`;
+  $("#rd").onchange=e=>{S.repDate=e.target.value||S.repDate;render()};
+  $("#xls").onclick=()=>xls(list,"Intra_"+S.repDate+".xlsx");
+  $("#pf").onchange=e=>S.perFrom=e.target.value; $("#pt").onchange=e=>S.perTo=e.target.value;
+  $("#pxls").onclick=async()=>{
+    const f=$("#pf").value,t=$("#pt").value; if(!f||!t){toast("Избери датуми");return}
+    const a=new Date(f+"T00:00:00").getTime(), b=new Date(t+"T00:00:00").getTime()+864e5; if(b<=a){toast("„До“ мора да е после „Од“");return}
+    toast("Се вчитува…");
+    try{const snap=await S.fs.collection(COLL).where("createdAt",">=",a).where("createdAt","<",b).get();
+      const l=snap.docs.map(d=>({id:d.id,...d.data()})).filter(d=>(d.flow||FLOWS[0].id)===F().id).sort((x,y)=>x.createdAt-y.createdAt);
+      if(!l.length){toast("Нема ништо во периодот");return} xls(l,`Intra_${f}_do_${t}.xlsx`);
+    }catch(e){toast("Не може да се вчита. Провери интернет.")}
+  };
+}
+function xls(list,file){
+  if(!list.length){toast("Нема ништо");return}
+  const f=F(), names=f.perPiece.map(p=>p.name);
+  const rows=[["ERI нарачка","Купувач","PO","Модел","Week","Висина","Парчиња",...names,"Материјал","Итно","Пуштил","Пуштено","Спремил","Спремно","Доставил","Доставено","Мин. до спремно","Мин. до доставено","Статус","Внес"]];
+  for(const d of list){const q=n=>(itemsOf(d).find(i=>i.name===n)||{}).qty??"";
+    rows.push([d.eri,d.customer,d.po,d.model,d.week,d.height,d.pieces,...names.map(q),d.material,d.urgent?"Да":"",d.byName,tStr(d.createdAt),d.readyBy||"",tStr(d.readyAt),d.deliveredBy||"",tStr(d.deliveredAt),mins(d.createdAt,d.readyAt)??"",mins(d.createdAt,d.deliveredAt)??"",ST[d.status]||d.status,d.src||""])}
+  const wb=XLSX.utils.book_new(), s=XLSX.utils.aoa_to_sheet(rows);
+  s["!cols"]=rows[0].map((h,i)=>({wch:i===1?22:Math.max(9,String(h).length+2)})); s["!autofilter"]={ref:"A1:"+XLSX.utils.encode_col(rows[0].length-1)+rows.length};
+  XLSX.utils.book_append_sheet(wb,s,f.name.slice(0,30)); XLSX.writeFile(wb,file);
+}
+
+/* ---------- scanning ---------- */
+let detector=null; try{if("BarcodeDetector" in window)detector=new BarcodeDetector({formats:["qr_code"]})}catch(e){}
+const cv=document.createElement("canvas"), cx=cv.getContext("2d",{willReadFrequently:true});
+let flip=0;
+function jsqrRegion(src,sx,sy,sw,sh,maxPx,inv){
+  const sc=Math.min(1,maxPx/Math.max(sw,sh)); cv.width=Math.max(1,Math.round(sw*sc)); cv.height=Math.max(1,Math.round(sh*sc));
+  cx.drawImage(src,sx,sy,sw,sh,0,0,cv.width,cv.height);
+  const d=cx.getImageData(0,0,cv.width,cv.height);
+  const r=jsQR(d.data,d.width,d.height,{inversionAttempts:inv}); return r?r.data:null;
+}
+async function decodeSource(src,w,h,still){
+  const m=Math.min(w,h), cs=Math.round(m*0.7), cx0=Math.round((w-cs)/2), cy0=Math.round((h-cs)/2);
+  if(detector){
+    try{const r=await detector.detect(src);if(r&&r[0])return r[0].rawValue}catch(e){}
+    try{ const sc=Math.min(2,1200/cs); cv.width=Math.round(cs*sc); cv.height=Math.round(cs*sc);
+      cx.drawImage(src,cx0,cy0,cs,cs,0,0,cv.width,cv.height);
+      const r2=await detector.detect(cv); if(r2&&r2[0]) return r2[0].rawValue; }catch(e){}
+  }
+  if(!window.jsQR) return null;
+  if(still){
+    return jsqrRegion(src,cx0,cy0,cs,cs,1000,"attemptBoth")||jsqrRegion(src,0,0,w,h,1400,"attemptBoth");
+  }
+  flip=(flip+1)%3;
+  if(flip<2) return jsqrRegion(src,cx0,cy0,cs,cs,720,"dontInvert");
+  return jsqrRegion(src,0,0,w,h,960,"dontInvert");
+}
+async function startScan(){
+  if(!S.liveOk){$("#photoIn").click();return}
+  $("#cam").classList.add("open"); $("#camInfo").textContent=""; $("#camMsg").textContent="QR-кодот стави го во белата рамка, на 10–20 cm од камерата";
+  try{
+    const camId=store.get("popis-cam");
+    const base={width:{ideal:1920},height:{ideal:1080}};
+    try{
+      S.stream=await navigator.mediaDevices.getUserMedia({audio:false,video:camId?{...base,deviceId:{exact:camId}}:{...base,facingMode:{ideal:"environment"}}});
+    }catch(err){
+      if(!camId) throw err; store.set("popis-cam","");
+      S.stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{...base,facingMode:{ideal:"environment"}}});
+    }
+    try{
+      const devs=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==="videoinput");
+      const back=devs.filter(d=>!/front|предн|user|selfie/i.test(d.label));
+      S.cams=back.length?back:devs;
+    }catch(e){S.cams=[]}
+    $("#camSwitch").hidden=!(S.cams&&S.cams.length>1);
+    const tr=S.stream.getVideoTracks()[0];
+    try{const caps=tr.getCapabilities?tr.getCapabilities():{}; if(caps.focusMode&&caps.focusMode.includes("continuous")) await tr.applyConstraints({advanced:[{focusMode:"continuous"}]});}catch(e){}
+    S.track=tr; S.torch=false; S.zoom=1;
+    try{const caps=tr.getCapabilities?tr.getCapabilities():{};
+      $("#camTorch").hidden=!caps.torch; $("#camTorch").textContent="Светло";
+      if(caps.zoom&&caps.zoom.max>=2){ S.zoomMax=Math.min(3,caps.zoom.max); $("#camZoom").hidden=false; $("#camZoom").textContent="Зум 2×"; } else $("#camZoom").hidden=true;
+    }catch(e){}
+    const v=$("#video"); v.srcObject=S.stream; await v.play(); S.scanning=true;
+    setTimeout(()=>{ if(!S.scanning) return; const st=S.track&&S.track.getSettings?S.track.getSettings():{}; const ix=(S.cams||[]).findIndex(c=>c.deviceId===st.deviceId);
+      $("#camInfo").textContent=`камера ${ix>=0?ix+1:"?"}/${(S.cams||[]).length||1}, ${v.videoWidth}×${v.videoHeight}, ${detector?"BD":"JS"}`; },800);
+    loop();
+  }catch(e){
+    $("#camInfo").textContent=(e&&e.name)||"";
+    S.liveOk=false; render();
+    $("#camMsg").textContent="Камерата во живо не е дозволена. Провери дали си дозволил пристап до камера, или притисни „Сликај“.";
+  }
+}
+async function loop(){
+  if(!S.scanning) return; const v=$("#video");
+  if(v.readyState>=2&&v.videoWidth){const r=await decodeSource(v,v.videoWidth,v.videoHeight);
+    if(r&&S.scanning){if(navigator.vibrate)try{navigator.vibrate(80)}catch(e){} stopScan(); onScan(r); return}}
+  setTimeout(()=>requestAnimationFrame(loop),60);
+}
+function stopScan(){S.scanning=false;if(S.stream){S.stream.getTracks().forEach(t=>t.stop());S.stream=null}$("#video").srcObject=null;$("#cam").classList.remove("open")}
+$("#camSwitch").onclick=async()=>{
+  if(!S.cams||S.cams.length<2) return;
+  const st=S.track&&S.track.getSettings?S.track.getSettings():{};
+  const ix=S.cams.findIndex(c=>c.deviceId===st.deviceId);
+  const next=S.cams[(ix+1)%S.cams.length];
+  store.set("popis-cam",next.deviceId);
+  stopScan(); setTimeout(startScan,150);
+};
+$("#camTorch").onclick=async()=>{ if(!S.track) return; S.torch=!S.torch;
+  try{await S.track.applyConstraints({advanced:[{torch:S.torch}]}); $("#camTorch").textContent=S.torch?"Светло ✓":"Светло";}catch(e){} };
+$("#camZoom").onclick=async()=>{ if(!S.track) return; S.zoom=S.zoom===1?2:1;
+  try{await S.track.applyConstraints({advanced:[{zoom:S.zoom}]}); $("#camZoom").textContent=S.zoom===1?"Зум 2×":"Зум 1×";}catch(e){} };
+$("#video").onclick=async()=>{ if(!S.track) return; try{await S.track.applyConstraints({advanced:[{focusMode:"single-shot"}]}); await S.track.applyConstraints({advanced:[{focusMode:"continuous"}]});}catch(e){} };
+$("#camClose").onclick=stopScan; $("#camManual").onclick=manualEntry; $("#camPhoto").onclick=()=>$("#photoIn").click();
+$("#photoIn").onchange=e=>{const f=e.target.files[0];e.target.value="";if(!f)return;
+  const img=new Image(),url=URL.createObjectURL(f);
+  img.onload=async()=>{const r=await decodeSource(img,img.naturalWidth,img.naturalHeight,true);URL.revokeObjectURL(url);
+    if(r){stopScan();onScan(r)}else toast("QR-кодот не се гледа на сликата. Сликај одблиску.")};
+  img.src=url;};
+
+
+/* авто-ажурирање */
+$("#ver").textContent="в. "+APP_VER;
+let lastAct=Date.now(); ["pointerdown","keydown","touchstart"].forEach(ev=>addEventListener(ev,()=>lastAct=Date.now(),{passive:true}));
+async function checkUpdate(){
+  if(location.protocol!=="https:") return;
+  try{
+    const r=await fetch(location.pathname+"?u="+Date.now(),{cache:"no-store"}); if(!r.ok) return;
+    const m=(await r.text()).match(/const APP_VER = "([^"]+)"/); if(!m||m[1]===APP_VER) return;
+    const busy=()=>$("#sheetBg").classList.contains("open")||$("#cam").classList.contains("open")||
+      (document.activeElement&&/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName))||Date.now()-lastAct<120000;
+    if(!busy()){location.reload();return}
+    const t=setInterval(()=>{if(!busy()){clearInterval(t);location.reload()}},30000);
+  }catch(e){}
+}
+setInterval(checkUpdate,10*60*1000);
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)checkUpdate()});
+setTimeout(checkUpdate,5000);
+/* освежи ги времињата на секоја минута */
+setInterval(()=>{if(!$("#sheetBg").classList.contains("open")&&!(document.activeElement&&/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)))render()},60000);
+render();
+window.__test={parseLabel,heightOf,thickOf};
+})();
+</script>
+</body>
+</html>
